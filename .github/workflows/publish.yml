@@ -19,6 +19,9 @@ jobs:
       - name: Install build tools
         run: pip install build twine
 
+      - name: Copy pyproject.toml to packages/python
+        run: cp pyproject.toml packages/python/
+
       - name: Build package
         run: |
           cd packages/python
