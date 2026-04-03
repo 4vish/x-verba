@@ -1,21 +1,36 @@
 """
-X-Verba Scan Engine.
+X-Verba Scan Engine v0.2.0
 
-Reads code structure and maps it to the VERBA governance taxonomy.
-Four passes: Primitive Detection, DC Pattern Matching,
-Gap Analysis, Structural Gamma Proxy.
+AI-integration-centric governance analysis.
 
-v0.1.1 — QA pass:
-- Fixed false positives: only flag actual AI API calls, not strings/imports/comments
-- Fixed false negatives: detect common wrapper patterns
-- Improved output quality: deduplicated findings, better line context
+Governance gaps are only meaningful in the context of AI calls.
+Non-AI code with file writes is a compiler.
+AI code with ungated file writes is a Knight Capital.
+
+Four passes:
+  1. Primitive Detection — find AI calls (AST for Python, regex for JS/TS)
+  2. DC Pattern Matching — map to Drift Class taxonomy
+  3. Gap Analysis — Pre-Node, Human Gate, Invariant, Terminal State gaps
+  4. Structural Gamma — governed / total decision points
+
+Context profiles:
+  ai-app        — full governance analysis, irreversible actions only when AI-adjacent (default)
+  system-utility — suppresses IA-GAPs for local file ops in non-AI files
+  general       — scan all files, legacy v0.1 behaviour
+
+v0.2.0 changes:
+  - Irreversible actions flagged only when AI-adjacent (fixes TypeScript false positive problem)
+  - Context profile support via --context-profile flag
+  - Fixed Gamma calculation (was always 0 for irreversible actions)
+  - Robust error handling throughout (no more crash on malformed files)
+  - ai_only mode: non-AI files skipped from governance analysis
 """
 import os
 import ast
 import json
 import hashlib
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from datetime import datetime, timezone
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -24,76 +39,69 @@ console = Console()
 
 TAXONOMY_PATH = Path(__file__).parent.parent / "taxonomy"
 
-# AI provider detection — module names to look for in imports and calls
-# These are the actual package names, not arbitrary strings
+# ── AI provider detection ─────────────────────────────────────────────────────
+# Only actual LLM provider SDKs and their adapters.
+# Agent frameworks (crewai, autogen, haystack) are NOT listed here —
+# we detect them via their underlying LLM calls.
+
 AI_PROVIDER_IMPORTS = {
-    # Direct LLM provider SDKs — these are the actual API clients
     "openai": "openai",
     "anthropic": "anthropic",
     "google.generativeai": "google",
     "google.cloud.aiplatform": "google",
     "cohere": "cohere",
     "boto3": "aws_bedrock",
-    # LangChain LLM adapters — only the LLM-specific subpackages
     "langchain_openai": "langchain",
     "langchain_anthropic": "langchain",
     "langchain_google_genai": "langchain",
     "langchain_cohere": "langchain",
     "langchain_community.llms": "langchain",
     "langchain_community.chat_models": "langchain",
-    # Other frameworks — detect via their LLM class usage
     "llama_index.llms": "llama_index",
     "transformers": "huggingface",
-    # NOT included: crewai, autogen, haystack, semantic_kernel base
-    # These are agent frameworks — we detect them via their underlying LLM calls
 }
 
-# Method call patterns that indicate an actual AI invocation
-# These must appear as function CALLS, not as strings or comments
 AI_CALL_METHODS = [
-    # OpenAI
     "chat.completions.create", "completions.create",
     "ChatCompletion.create", "Completion.create",
     "client.chat", "openai.ChatCompletion",
-    # Anthropic
     "messages.create", "client.messages",
     "anthropic.Anthropic", "AsyncAnthropic",
-    # LangChain
     "chain.run", "chain.invoke", "chain.stream",
     "agent.run", "agent.invoke",
     "LLMChain", "AgentExecutor",
     "ChatOpenAI", "ChatAnthropic", "ChatGoogleGenerativeAI",
-    # Generic patterns
     ".generate(", ".complete(", ".predict(",
     ".chat(", ".ask(", ".query(",
-    # HuggingFace
     "pipeline(", "AutoModelForCausalLM",
-    # Bedrock
     "invoke_model(", "invoke_model_with_response_stream(",
 ]
 
-SENSITIVE_FIELD_PATTERNS = [
-    "patient", "ssn", "social_security", "medical_record",
-    "diagnosis", "prescription", "credit_card", "card_number",
-    "account_number", "routing_number", "password", "secret_key",
-    "private_key", "api_key", "access_token", "refresh_token",
-    "personal_data", "pii", "gdpr", "hipaa",
-]
-
 IRREVERSIBLE_ACTION_PATTERNS = {
-    "email_send": ["send_mail", "send_message", "smtp.sendmail", "ses.send_email",
-                   "mailgun", "sendgrid"],
-    "database_delete": ["db.delete", "collection.drop", "session.delete",
-                        ".delete_many", ".drop_collection", "DELETE FROM"],
-    "database_write": ["db.insert", "db.update", "db.save",
-                       "collection.insert", ".commit()"],
-    "external_api": ["requests.post", "requests.put", "requests.delete",
-                     "httpx.post", "urllib.request"],
+    "email_send": [
+        "send_mail", "send_message", "smtp.sendmail", "ses.send_email",
+        "mailgun", "sendgrid",
+    ],
+    "database_delete": [
+        "db.delete", "collection.drop", "session.delete",
+        ".delete_many", ".drop_collection", "DELETE FROM",
+    ],
+    "database_write": [
+        "db.insert", "db.update", "db.save",
+        "collection.insert", ".commit()",
+    ],
+    "external_api": [
+        "requests.post", "requests.put", "requests.delete",
+        "httpx.post", "urllib.request",
+    ],
     "file_system": ["os.remove", "os.unlink", "shutil.rmtree"],
-    "system_command": ["os.system", "subprocess.run", "subprocess.call",
-                       "subprocess.Popen"],
-    "payment": ["stripe.charge", "stripe.PaymentIntent", "payment.create",
-                "transaction.create"],
+    "system_command": [
+        "os.system", "subprocess.run", "subprocess.call", "subprocess.Popen",
+    ],
+    "payment": [
+        "stripe.charge", "stripe.PaymentIntent", "payment.create",
+        "transaction.create",
+    ],
 }
 
 SUPPORTED_EXTENSIONS = {
@@ -111,6 +119,39 @@ SKIP_DIRS = {
     "benchmark", "benchmarks", "eval", "evals", "cookbook",
 }
 
+# Context profiles — control which checks fire in which scenarios
+CONTEXT_PROFILES = {
+    "ai-app": {
+        "description": (
+            "Full governance analysis. Irreversible actions flagged only when "
+            "AI-adjacent. Default profile for AI-integrated applications."
+        ),
+        "flag_irrev_outside_ai": False,
+        "require_ai_for_scan": True,
+        "suppress_informal_invariants": False,
+    },
+    "system-utility": {
+        "description": (
+            "Suppresses IA-GAPs for local file ops in non-AI files. "
+            "For compilers, build tools, CLI utilities with some AI features."
+        ),
+        "flag_irrev_outside_ai": False,
+        "require_ai_for_scan": False,
+        "suppress_informal_invariants": True,
+    },
+    "general": {
+        "description": (
+            "Legacy behaviour — scans all files regardless of AI presence. "
+            "Use when you want maximum coverage including non-AI code."
+        ),
+        "flag_irrev_outside_ai": True,
+        "require_ai_for_scan": False,
+        "suppress_informal_invariants": False,
+    },
+}
+
+
+# ── AST analyser (Python only) ────────────────────────────────────────────────
 
 class ASTAnalyser:
     """
@@ -120,20 +161,19 @@ class ASTAnalyser:
     """
 
     def __init__(self):
-        self.ai_imports = {}      # local_name -> provider
-        self.ai_calls = []        # list of detected AI call sites
-        self.assignments = {}     # variable_name -> what it was assigned
+        self.ai_imports = {}
+        self.ai_calls = []
+        self.assignments = {}
 
     def analyse(self, source: str, filepath: str) -> dict:
-        """Parse Python source and extract AI integration points."""
         self.ai_imports = {}
         self.ai_calls = []
         self.assignments = {}
 
         try:
             tree = ast.parse(source)
-        except SyntaxError:
-            return {"ai_calls": [], "imports": {}}
+        except (SyntaxError, ValueError, RecursionError):
+            return {"ai_calls": [], "imports": {}, "parse_error": True}
 
         self._collect_imports(tree)
         self._collect_calls(tree, source.splitlines())
@@ -141,10 +181,10 @@ class ASTAnalyser:
         return {
             "ai_calls": self.ai_calls,
             "imports": self.ai_imports,
+            "parse_error": False,
         }
 
     def _collect_imports(self, tree: ast.AST) -> None:
-        """Find all AI-related imports and record what names they bind."""
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -163,7 +203,6 @@ class ASTAnalyser:
                         break
 
     def _collect_calls(self, tree: ast.AST, lines: list) -> None:
-        """Find actual function calls to AI providers."""
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Call, ast.Expr)):
                 continue
@@ -185,9 +224,12 @@ class ASTAnalyser:
                 continue
 
             line_num = getattr(call_node, "lineno", 0)
-            line_content = lines[line_num - 1].strip() if line_num > 0 and line_num <= len(lines) else ""
+            line_content = (
+                lines[line_num - 1].strip()
+                if line_num > 0 and line_num <= len(lines)
+                else ""
+            )
 
-            # Extract temperature and max_tokens from keyword args
             temperature = None
             max_tokens = None
             streaming = False
@@ -210,7 +252,6 @@ class ASTAnalyser:
             })
 
     def _get_call_string(self, func_node) -> Optional[str]:
-        """Convert AST function node to dotted string."""
         if isinstance(func_node, ast.Name):
             return func_node.id
         if isinstance(func_node, ast.Attribute):
@@ -220,18 +261,13 @@ class ASTAnalyser:
         return None
 
     def _identify_provider(self, call_str: str) -> Optional[str]:
-        """Check if a call string matches a known AI provider pattern."""
         call_lower = call_str.lower()
-
-        # Check if root object is a known import
         root = call_str.split(".")[0]
         if root in self.ai_imports:
             return self.ai_imports[root]
 
-        # Check against known call method signatures
         for method in AI_CALL_METHODS:
             if method.rstrip("(") in call_str:
-                # Map to provider
                 if any(x in call_lower for x in ["openai", "chatcompletion", "completion"]):
                     return "openai"
                 if any(x in call_lower for x in ["anthropic", "claude"]):
@@ -243,45 +279,38 @@ class ASTAnalyser:
         return None
 
 
+# ── JS/TS detection ───────────────────────────────────────────────────────────
+
 def _detect_ai_calls_js(content: str, lines: list) -> list:
     """
     JavaScript/TypeScript AI call detection.
-    Looks for actual method calls in code context,
-    not string constants or comments.
+    Pattern-based — skips comments and obvious string contexts.
     """
     import re
     calls = []
 
-    # Patterns that indicate actual AI API invocations in JS/TS
     js_ai_patterns = [
-        # OpenAI
         (r'openai\.(chat|completions?|beta)', "openai"),
         (r'new\s+OpenAI\s*\(', "openai"),
         (r'client\.chat\.completions\.create', "openai"),
-        # Anthropic
         (r'anthropic\.messages\.create', "anthropic"),
         (r'new\s+Anthropic\s*\(', "anthropic"),
-        # LangChain JS
         (r'new\s+ChatOpenAI\s*\(', "langchain"),
         (r'new\s+ChatAnthropic\s*\(', "langchain"),
         (r'chain\.invoke\s*\(', "langchain"),
         (r'agent\.invoke\s*\(', "langchain"),
-        # Vercel AI SDK
         (r'generateText\s*\(', "vercel_ai"),
         (r'streamText\s*\(', "vercel_ai"),
-        # Generic
         (r'\.generate\s*\(\s*\{', "ai_framework"),
     ]
 
     for i, line in enumerate(lines, 1):
-        # Skip comments
         stripped = line.strip()
         if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
             continue
 
         for pattern, provider in js_ai_patterns:
             if re.search(pattern, line):
-                # Check it's not inside a string literal (basic check)
                 if line.count('"') % 2 == 0 and line.count("'") % 2 == 0:
                     calls.append({
                         "line": i,
@@ -290,7 +319,9 @@ def _detect_ai_calls_js(content: str, lines: list) -> list:
                         "provider": provider,
                         "temperature": _extract_js_param(lines, i, "temperature"),
                         "max_tokens": _extract_js_param(lines, i, "maxTokens"),
-                        "streaming": "stream" in content[max(0, content.find(line)-100):content.find(line)+200].lower(),
+                        "streaming": "stream" in content[
+                            max(0, content.find(line) - 100):content.find(line) + 200
+                        ].lower(),
                     })
                     break
 
@@ -298,9 +329,8 @@ def _detect_ai_calls_js(content: str, lines: list) -> list:
 
 
 def _extract_js_param(lines: list, line_num: int, param: str) -> Optional[float]:
-    """Extract a numeric parameter from nearby JS/TS code."""
     import re
-    context = "\n".join(lines[max(0, line_num-1):min(len(lines), line_num+10)])
+    context = "\n".join(lines[max(0, line_num - 1):min(len(lines), line_num + 10)])
     match = re.search(rf'{param}\s*:\s*([0-9.]+)', context)
     if match:
         try:
@@ -310,29 +340,23 @@ def _extract_js_param(lines: list, line_num: int, param: str) -> Optional[float]
     return None
 
 
+# ── Guard detection ───────────────────────────────────────────────────────────
+
 def _has_guard_before(lines: list, line_num: int, window: int = 15) -> bool:
-    """
-    Check for a genuine governance checkpoint in the N lines before a call.
-    Must be an actual conditional check, not just any if statement.
-    """
+    """Check for a genuine governance checkpoint in the N lines before a call."""
     guard_patterns = [
-        # Validation checks
         "validate_", "is_valid", "check_", "verify_", "sanitize", "sanitise",
         "allowed_", "permitted_", "authorized", "authorised", "authenticated",
-        # Guard clauses that block
         "raise ", "return safe", "return error", "return None",
         "throw new", "throw Error",
-        # Explicit governance patterns
         "pre_node", "invariant", "governance", "eligibility",
         "allow_list", "allowlist", "whitelist", "blocklist", "blacklist",
-        # VERBA-style patterns
         "if not allowed", "if not valid", "if not auth",
     ]
 
-    search_lines = lines[max(0, line_num-window):line_num-1]
+    search_lines = lines[max(0, line_num - window):line_num - 1]
     for line in search_lines:
         line_lower = line.lower().strip()
-        # Skip blank lines and comments
         if not line_lower or line_lower.startswith("#") or line_lower.startswith("//"):
             continue
         for pattern in guard_patterns:
@@ -343,7 +367,7 @@ def _has_guard_before(lines: list, line_num: int, window: int = 15) -> bool:
 
 def _has_human_review(lines: list, line_num: int) -> bool:
     """Check for human review mechanism after an AI call."""
-    search_lines = lines[line_num:min(len(lines), line_num+20)]
+    search_lines = lines[line_num:min(len(lines), line_num + 20)]
     human_signals = [
         "review", "approve", "confirm", "human_in_loop",
         "human_review", "manual_check", "oversight",
@@ -358,20 +382,18 @@ def _has_human_review(lines: list, line_num: int) -> bool:
 def _detect_irreversible_actions(lines: list, filepath: str) -> list:
     """
     Detect irreversible actions with no authorisation gate.
-    Only flag when no authorisation check exists before the action.
+    Only called on AI-adjacent files in ai-app and system-utility profiles.
     """
     import re
     findings = []
-    content = "\n".join(lines)
 
     for action_type, patterns in IRREVERSIBLE_ACTION_PATTERNS.items():
         for pattern in patterns:
             for i, line in enumerate(lines, 1):
-                # Skip comments and imports
                 stripped = line.strip()
                 if stripped.startswith("#") or stripped.startswith("//"):
                     continue
-                if "import " in stripped and not "(" in stripped:
+                if "import " in stripped and "(" not in stripped:
                     continue
 
                 if re.search(pattern, line, re.IGNORECASE):
@@ -391,7 +413,9 @@ def _detect_irreversible_actions(lines: list, filepath: str) -> list:
 
 def _has_authorisation_gate(lines: list, line_num: int) -> bool:
     """Check for authorisation gates before irreversible actions."""
-    search_lines = lines[max(0, line_num-20):line_num-1]
+    if not lines or line_num == 0:
+        return False
+    search_lines = lines[max(0, line_num - 20):line_num - 1]
     gate_signals = [
         "approve", "confirm", "authoris", "authoriz",
         "permission", "has_permission", "can_",
@@ -404,17 +428,22 @@ def _has_authorisation_gate(lines: list, line_num: int) -> bool:
     )
 
 
+# ── Main scan engine ──────────────────────────────────────────────────────────
+
 class ScanEngine:
     """
-    Core scan engine. Reads code structure and maps to
-    the VERBA governance taxonomy.
+    Core scan engine — AI-integration-centric.
 
-    v0.1.1 — uses AST analysis for Python (eliminates false positives)
-    and improved pattern matching for JS/TS.
+    Governance gaps are only meaningful relative to AI calls.
+    Irreversible actions flagged only when AI-adjacent (in ai-app profile).
+
+    v0.2.0 — context profiles, fixed Gamma, robust error handling.
     """
 
-    def __init__(self, verbose: bool = False):
+    def __init__(self, verbose: bool = False, context_profile: str = "ai-app"):
         self.verbose = verbose
+        self.context_profile = context_profile
+        self.profile = CONTEXT_PROFILES.get(context_profile, CONTEXT_PROFILES["ai-app"])
         self.dc_classes = self._load_taxonomy("dc_classes.json")
         self.so_operators = self._load_taxonomy("so_operators.json")
         self.ast_analyser = ASTAnalyser()
@@ -422,8 +451,11 @@ class ScanEngine:
     def _load_taxonomy(self, filename: str) -> dict:
         path = TAXONOMY_PATH / filename
         if path.exists():
-            with open(path) as f:
-                return json.load(f)
+            try:
+                with open(path) as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                return {}
         return {}
 
     def scan(self, repo_path: str, identity_key: str = None) -> dict:
@@ -434,7 +466,8 @@ class ScanEngine:
             "scan_date": datetime.now(timezone.utc).isoformat(),
             "repo": str(path),
             "identity_key": identity_key,
-            "verba_version": "1.0.1",
+            "verba_version": "0.2.0",
+            "context_profile": self.context_profile,
             "reviewed": False,
         }
 
@@ -442,7 +475,7 @@ class ScanEngine:
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             console=console,
-            transient=True
+            transient=True,
         ) as progress:
 
             t1 = progress.add_task("Pass 1 — Reading code structure...", total=None)
@@ -455,6 +488,37 @@ class ScanEngine:
             primitives = self._detect_primitives(parsed, path)
             results["primitives"] = primitives
             progress.update(t2, completed=True)
+
+            # In ai-app profile, exit cleanly if no AI found
+            if (
+                self.profile["require_ai_for_scan"]
+                and not primitives["ai_integrations"]
+            ):
+                results["summary"] = {
+                    "files_scanned": len(files),
+                    "ai_integrations_detected": 0,
+                    "critical": 0, "high": 0, "medium": 0,
+                    "total_gaps": 0,
+                    "dc_classes_detected": 0,
+                    "governance_coverage": "N/A",
+                    "structural_gamma": None,
+                    "governance_status": "NO_AI_INTEGRATIONS",
+                    "context_profile": self.context_profile,
+                    "note": (
+                        "No AI integrations detected. X-Verba governs AI-integrated code. "
+                        "If this repo uses AI, check that imports match known providers. "
+                        "Use --context-profile general to scan all files regardless."
+                    ),
+                }
+                results["gaps"] = []
+                results["drift_classes"] = []
+                results["structural_gamma"] = {
+                    "proxy_value": None,
+                    "status": "NO_AI_INTEGRATIONS",
+                    "interpretation": "No AI integration points detected. Governance score not applicable.",
+                }
+                results["critical_findings"] = []
+                return results
 
             t3 = progress.add_task("Pass 3 — Mapping Drift Classes...", total=None)
             dc_findings = self._match_dc_patterns(primitives, parsed)
@@ -485,7 +549,7 @@ class ScanEngine:
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for fn in filenames:
                 fp = Path(root) / fn
-                if fp.suffix in SUPPORTED_EXTENSIONS and fp.suffix != ".ipynb":
+                if fp.suffix in SUPPORTED_EXTENSIONS:
                     files.append(fp)
         return files
 
@@ -499,10 +563,37 @@ class ScanEngine:
                     "content": content,
                     "lines": content.splitlines(),
                     "extension": fp.suffix,
+                    "has_ai": self._quick_ai_check(content),
                 })
-            except Exception:
-                pass
+            except (OSError, PermissionError) as e:
+                if self.verbose:
+                    console.print(f"[dim]Skipping {fp}: {e}[/dim]")
         return parsed
+
+    def _quick_ai_check(self, content: str) -> bool:
+        """Fast pre-filter: does this file likely contain AI calls?"""
+        ai_signals = list(AI_PROVIDER_IMPORTS.keys()) + [
+            "openai", "anthropic", "langchain", "llama_index",
+            "transformers", "bedrock", "cohere", "generativeai",
+            "ChatCompletion", "messages.create", "invoke_model",
+            "generateText", "streamText",
+        ]
+        content_lower = content.lower()
+        return any(sig.lower() in content_lower for sig in ai_signals)
+
+    def _is_ai_adjacent_file(self, file_data: dict, ai_file_paths: set) -> bool:
+        """
+        A file is AI-adjacent if it contains AI calls directly,
+        or if it imports a module from an AI-containing file (one level).
+        """
+        if file_data["has_ai"]:
+            return True
+        content = file_data["content"]
+        for ai_path in ai_file_paths:
+            stem = Path(ai_path).stem
+            if f"import {stem}" in content or f"from {stem}" in content:
+                return True
+        return False
 
     def _detect_primitives(self, parsed: list, base_path: Path) -> dict:
         primitives = {
@@ -513,6 +604,9 @@ class ScanEngine:
             "nodes": [],
             "clusters": [],
         }
+
+        # First pass: identify AI-containing files
+        ai_file_paths = {str(f["path"]) for f in parsed if f["has_ai"]}
 
         for file_data in parsed:
             content = file_data["content"]
@@ -525,59 +619,100 @@ class ScanEngine:
             except ValueError:
                 rel_path = fp
 
-            # AST analysis for Python — eliminates false positives
+            is_ai_file = file_data["has_ai"]
+            is_adjacent = self._is_ai_adjacent_file(file_data, ai_file_paths)
+
+            # AST analysis for Python
             if ext == ".py":
-                ast_result = self.ast_analyser.analyse(content, str(rel_path))
-                for call in ast_result["ai_calls"]:
-                    pre_node = _has_guard_before(lines, call["line"])
-                    human_review = _has_human_review(lines, call["line"])
-                    primitives["ai_integrations"].append({
-                        "id": f"AI-{len(primitives['ai_integrations'])+1:03d}",
-                        "provider": call["provider"],
-                        "location": f"{rel_path}:{call['line']}",
-                        "line_content": call["line_content"],
-                        "temperature": call.get("temperature"),
-                        "max_tokens": call.get("max_tokens"),
-                        "streaming": call.get("streaming", False),
-                        "dynamic_prompt": self._has_dynamic_prompt(content, call["line"]),
-                        "user_input_in_prompt": self._has_user_input_in_prompt(content, call["line"]),
-                        "pre_node_detected": pre_node,
-                        "human_review_detected": human_review,
-                        "output_destination": self._detect_output_destination(lines, call["line"]),
-                    })
+                try:
+                    ast_result = self.ast_analyser.analyse(content, str(rel_path))
+                    for call in ast_result["ai_calls"]:
+                        pre_node = _has_guard_before(lines, call["line"])
+                        human_review = _has_human_review(lines, call["line"])
+                        primitives["ai_integrations"].append({
+                            "id": f"AI-{len(primitives['ai_integrations'])+1:03d}",
+                            "provider": call["provider"],
+                            "location": f"{rel_path}:{call['line']}",
+                            "line_content": call["line_content"],
+                            "temperature": call.get("temperature"),
+                            "max_tokens": call.get("max_tokens"),
+                            "streaming": call.get("streaming", False),
+                            "dynamic_prompt": self._has_dynamic_prompt(content, call["line"]),
+                            "user_input_in_prompt": self._has_user_input_in_prompt(content, call["line"]),
+                            "pre_node_detected": pre_node,
+                            "human_review_detected": human_review,
+                            "output_destination": self._detect_output_destination(lines, call["line"]),
+                            "source_file": str(rel_path),
+                        })
+                except Exception as e:
+                    if self.verbose:
+                        console.print(f"[dim]AST error in {rel_path}: {e}[/dim]")
 
-            # Pattern-based for JS/TS (improved — skips comments and strings)
+            # Pattern-based for JS/TS
             elif ext in (".js", ".ts", ".jsx", ".tsx"):
-                js_calls = _detect_ai_calls_js(content, lines)
-                for call in js_calls:
-                    pre_node = _has_guard_before(lines, call["line"])
-                    human_review = _has_human_review(lines, call["line"])
-                    primitives["ai_integrations"].append({
-                        "id": f"AI-{len(primitives['ai_integrations'])+1:03d}",
-                        "provider": call["provider"],
-                        "location": f"{rel_path}:{call['line']}",
-                        "line_content": call["line_content"],
-                        "temperature": call.get("temperature"),
-                        "max_tokens": call.get("max_tokens"),
-                        "streaming": call.get("streaming", False),
-                        "dynamic_prompt": "template" in content[max(0,content.find(call["line_content"])-200):].lower(),
-                        "user_input_in_prompt": any(s in content[max(0,content.find(call["line_content"])-300):] for s in ["req.body", "request.body", "userInput", "user_input", "query"]),
-                        "pre_node_detected": pre_node,
-                        "human_review_detected": human_review,
-                        "output_destination": self._detect_output_destination(lines, call["line"]),
-                    })
+                try:
+                    js_calls = _detect_ai_calls_js(content, lines)
+                    for call in js_calls:
+                        pre_node = _has_guard_before(lines, call["line"])
+                        human_review = _has_human_review(lines, call["line"])
+                        primitives["ai_integrations"].append({
+                            "id": f"AI-{len(primitives['ai_integrations'])+1:03d}",
+                            "provider": call["provider"],
+                            "location": f"{rel_path}:{call['line']}",
+                            "line_content": call["line_content"],
+                            "temperature": call.get("temperature"),
+                            "max_tokens": call.get("max_tokens"),
+                            "streaming": call.get("streaming", False),
+                            "dynamic_prompt": "template" in content[
+                                max(0, content.find(call["line_content"]) - 200):
+                            ].lower(),
+                            "user_input_in_prompt": any(
+                                s in content[
+                                    max(0, content.find(call["line_content"]) - 300):
+                                ]
+                                for s in [
+                                    "req.body", "request.body", "userInput",
+                                    "user_input", "query",
+                                ]
+                            ),
+                            "pre_node_detected": pre_node,
+                            "human_review_detected": human_review,
+                            "output_destination": self._detect_output_destination(lines, call["line"]),
+                            "source_file": str(rel_path),
+                        })
+                except Exception as e:
+                    if self.verbose:
+                        console.print(f"[dim]JS scan error in {rel_path}: {e}[/dim]")
 
-            # Detect irreversible actions (both languages)
-            irrev = _detect_irreversible_actions(lines, str(rel_path))
-            primitives["irreversible_actions"].extend(irrev)
+            # Irreversible actions — only on AI-adjacent files in ai-app profile
+            should_scan_irrev = (
+                self.profile["flag_irrev_outside_ai"]
+                or is_adjacent
+            )
+            if should_scan_irrev:
+                try:
+                    irrev = _detect_irreversible_actions(lines, str(rel_path))
+                    primitives["irreversible_actions"].extend(irrev)
+                except Exception as e:
+                    if self.verbose:
+                        console.print(f"[dim]Irreversible action scan error in {rel_path}: {e}[/dim]")
 
-            # Detect existing constraints (informal Invariants)
-            self._detect_constraints(content, lines, rel_path, primitives)
+            # Constraints — only on AI files, suppressed in system-utility profile
+            if not self.profile["suppress_informal_invariants"] and is_ai_file:
+                try:
+                    self._detect_constraints(content, lines, rel_path, primitives)
+                except Exception as e:
+                    if self.verbose:
+                        console.print(f"[dim]Constraint scan error in {rel_path}: {e}[/dim]")
 
-        # Detect cluster patterns
-        self._detect_clusters(base_path, primitives)
+        # Cluster detection
+        try:
+            self._detect_clusters(base_path, primitives)
+        except Exception as e:
+            if self.verbose:
+                console.print(f"[dim]Cluster detection error: {e}[/dim]")
 
-        # Deduplicate irreversible actions by location
+        # Deduplicate irreversible actions
         seen = set()
         unique_irrev = []
         for a in primitives["irreversible_actions"]:
@@ -590,12 +725,13 @@ class ScanEngine:
         return primitives
 
     def _detect_constraints(self, content, lines, rel_path, primitives):
-        """Detect existing validation logic as informal Invariant candidates."""
         constraint_patterns = [
             ("assertion", ["assert ", "assertTrue", "assertFalse"]),
             ("validation", ["validate_", "is_valid(", "check_input", "verify_"]),
-            ("auth_check", ["@login_required", "@auth", "require_auth",
-                           "is_authenticated", "permission_required"]),
+            ("auth_check", [
+                "@login_required", "@auth", "require_auth",
+                "is_authenticated", "permission_required",
+            ]),
         ]
         for i, line in enumerate(lines, 1):
             for c_type, patterns in constraint_patterns:
@@ -633,7 +769,6 @@ class ScanEngine:
         for ai in primitives.get("ai_integrations", []):
             loc = ai["location"]
 
-            # DC-E5: User input in prompt without sanitisation
             if ai.get("user_input_in_prompt") and not ai.get("pre_node_detected"):
                 key = f"DC-E5:{loc}"
                 if key not in seen_locations:
@@ -642,10 +777,9 @@ class ScanEngine:
                         "DC-E5", dc_classes.get("DC-E5", {}), loc,
                         "E5-L2", ai["id"],
                         "User input flows into AI prompt with no sanitisation checkpoint",
-                        "critical"
+                        "critical",
                     ))
 
-            # DC-L2: Dynamic prompt with no performative boundary
             if ai.get("dynamic_prompt") and not ai.get("pre_node_detected"):
                 key = f"DC-L2:{loc}"
                 if key not in seen_locations:
@@ -654,12 +788,11 @@ class ScanEngine:
                         "DC-L2", dc_classes.get("DC-L2", {}), loc,
                         "L2-L1", ai["id"],
                         "Dynamic prompt assembled from external input with no boundary check",
-                        "high"
+                        "high",
                     ))
 
-            # DC-I6: High temperature — cascade rupture risk
             temp = ai.get("temperature")
-            if temp and isinstance(temp, (int, float)) and temp > 0.7:
+            if temp is not None and isinstance(temp, (int, float)) and temp > 0.7:
                 key = f"DC-I6-temp:{loc}"
                 if key not in seen_locations:
                     seen_locations.add(key)
@@ -667,10 +800,9 @@ class ScanEngine:
                         "DC-I6", dc_classes.get("DC-I6", {}), loc,
                         "I6-L1", ai["id"],
                         f"High temperature ({temp}) — structural cascade rupture risk",
-                        "high"
+                        "high",
                     ))
 
-            # DC-I11: No human review and no governance metric
             if not ai.get("human_review_detected") and not ai.get("pre_node_detected"):
                 key = f"DC-I11:{loc}"
                 if key not in seen_locations:
@@ -679,10 +811,9 @@ class ScanEngine:
                         "DC-I11", dc_classes.get("DC-I11", {}), loc,
                         "I11-L1", ai["id"],
                         "No governance checkpoint — AI output proceeds without any check",
-                        "medium"
+                        "medium",
                     ))
 
-        # DC-E13: Chained AI calls
         if len(primitives.get("ai_integrations", [])) > 1:
             dc = dc_classes.get("DC-E13", {})
             key = "DC-E13:chained"
@@ -693,10 +824,9 @@ class ScanEngine:
                     "DC-E13", dc, f"{count} AI calls detected",
                     "E13-L1", "chain",
                     f"{count} chained AI calls — output of one may seed the next without validation",
-                    "high"
+                    "high",
                 ))
 
-        # DC-S3: Cluster-level governance missing
         if primitives.get("clusters"):
             dc = dc_classes.get("DC-S3", {})
             key = "DC-S3:cluster"
@@ -706,10 +836,9 @@ class ScanEngine:
                     "DC-S3", dc, "cluster-level",
                     "S3-L1", "cluster",
                     "Multi-service architecture with no cluster-level governance — Flash Crash failure mode",
-                    "critical"
+                    "critical",
                 ))
 
-        # DC-E14: Irreversible actions triggered by AI
         for action in primitives.get("irreversible_actions", []):
             loc = f"{action['filepath']}:{action['line']}"
             key = f"DC-E14:{loc}"
@@ -720,7 +849,7 @@ class ScanEngine:
                     "DC-E14", dc, loc,
                     "E14-L1", "irreversible",
                     f"Irreversible action ({action['action_type']}) with no authorisation gate — Knight Capital failure mode",
-                    "critical"
+                    "critical",
                 ))
 
         return findings
@@ -766,7 +895,6 @@ class ScanEngine:
     def _analyse_gaps(self, primitives: dict) -> list:
         gaps = []
 
-        # Pre-Node gaps at AI calls
         for ai in primitives.get("ai_integrations", []):
             if not ai.get("pre_node_detected"):
                 gaps.append({
@@ -775,7 +903,7 @@ class ScanEngine:
                     "location": ai["location"],
                     "severity": "critical",
                     "plain_english": (
-                        f"No checkpoint exists before your AI call at {ai['location']}. "
+                        f"No checkpoint exists before the AI call at {ai['location']}. "
                         f"The AI receives input and produces output with nothing checking "
                         f"whether it should — or what it can return."
                     ),
@@ -795,6 +923,7 @@ class ScanEngine:
                         "What conditions must be met? What must the AI never return?"
                     ),
                     "policy": None,
+                    "ai_integration_ref": ai["id"],
                 })
 
             if not ai.get("human_review_detected"):
@@ -805,7 +934,7 @@ class ScanEngine:
                     "location": ai["location"],
                     "severity": "high",
                     "plain_english": (
-                        f"AI output flows to {dest} with no human review detected."
+                        f"AI output flows to '{dest}' with no human review detected."
                     ),
                     "what_is_missing": "Human authorisation gate for critical severity outputs.",
                     "consequence": "Every AI output reaches its destination automatically.",
@@ -814,11 +943,13 @@ class ScanEngine:
                         "In VERBA, a Human-Authorised Transition cannot be initiated by "
                         "automation — it requires explicit, auditable human approval."
                     ),
-                    "recommended_action": "Define the severity and required authorisation level for this output.",
+                    "recommended_action": (
+                        "Define the severity and required authorisation level for this output."
+                    ),
                     "policy": None,
+                    "ai_integration_ref": ai["id"],
                 })
 
-        # Irreversible action gaps
         for action in primitives.get("irreversible_actions", []):
             loc = f"{action['filepath']}:{action['line']}"
             gaps.append({
@@ -828,7 +959,8 @@ class ScanEngine:
                 "severity": "critical",
                 "plain_english": (
                     f"An irreversible action ({action['action_type']}) at line {action['line']} "
-                    f"has no authorisation gate. Once executed, it cannot be undone."
+                    f"in an AI-adjacent file has no authorisation gate. "
+                    f"Once executed, it cannot be undone."
                 ),
                 "what_is_missing": "An eligibility condition confirming authorisation before execution.",
                 "consequence": (
@@ -848,47 +980,52 @@ class ScanEngine:
                 "policy": None,
             })
 
-        # Informal Invariant gaps
-        for constraint in primitives.get("constraints", []):
-            gaps.append({
-                "id": f"INV-GAP-{len(gaps)+1:03d}",
-                "type": "informal_invariant",
-                "location": constraint["location"],
-                "severity": "medium",
-                "plain_english": (
-                    f"A governance check exists at {constraint['location']} "
-                    f"but it is informal — not version-controlled, not machine-executable, "
-                    f"not connected to any audit trail."
-                ),
-                "what_is_missing": "Formalisation as a VERBA Invariant.",
-                "consequence": (
-                    "A future refactor removes this check silently. "
-                    "No test catches it. No audit records it."
-                ),
-                "verba_term": "Informal Invariant — needs formalisation",
-                "verba_explanation": (
-                    "An Invariant must always hold, cannot be bypassed, "
-                    "and must be explicitly declared in the governance schema."
-                ),
-                "recommended_action": "Formalise this check as an Invariant with CANNOT_BE_BYPASSED: TRUE.",
-                "policy": None,
-            })
+        if not self.profile["suppress_informal_invariants"]:
+            for constraint in primitives.get("constraints", []):
+                gaps.append({
+                    "id": f"INV-GAP-{len(gaps)+1:03d}",
+                    "type": "informal_invariant",
+                    "location": constraint["location"],
+                    "severity": "medium",
+                    "plain_english": (
+                        f"A governance check exists at {constraint['location']} "
+                        f"but it is informal — not version-controlled, not machine-executable, "
+                        f"not connected to any audit trail."
+                    ),
+                    "what_is_missing": "Formalisation as a VERBA Invariant.",
+                    "consequence": (
+                        "A future refactor removes this check silently. "
+                        "No test catches it. No audit records it."
+                    ),
+                    "verba_term": "Informal Invariant — needs formalisation",
+                    "verba_explanation": (
+                        "An Invariant must always hold, cannot be bypassed, "
+                        "and must be explicitly declared in the governance schema."
+                    ),
+                    "recommended_action": (
+                        "Formalise this check as an Invariant with CANNOT_BE_BYPASSED: TRUE."
+                    ),
+                    "policy": None,
+                })
 
         return gaps
 
     def _compute_gamma(self, primitives: dict, gaps: list) -> dict:
         """
         Structural Gamma = Governed Decision Points / Total Decision Points
-        Governed = has a pre_node AND no critical gaps at that location.
+
+        Governed AI call     = has pre_node AND has human_review.
+        Governed irrev action = NOT in the ungated list (i.e. has an auth gate).
+
+        v0.2.0 fix: irrev actions now correctly counted using actual gap list.
         """
         ai_integrations = primitives.get("ai_integrations", [])
         irreversible = primitives.get("irreversible_actions", [])
-
         total_decision_points = len(ai_integrations) + len(irreversible)
 
         if total_decision_points == 0:
             return {
-                "proxy_value": 1.0,
+                "proxy_value": None,
                 "threshold": 0.9,
                 "status": "NO_AI_INTEGRATIONS",
                 "interpretation": "No AI integration points detected. Governance score not applicable.",
@@ -898,24 +1035,34 @@ class ScanEngine:
                 "what_this_means": "Gamma = Governed Decision Points / Total Decision Points",
             }
 
-        governed = sum(
+        governed_ai = sum(
             1 for ai in ai_integrations
             if ai.get("pre_node_detected") and ai.get("human_review_detected")
         )
-        # Irreversible actions with gates count as governed
-        governed += sum(
+
+        # Irreversible actions: governed = total minus those appearing as IA-GAPs
+        ungated_irrev_locs = {
+            g["location"]
+            for g in gaps
+            if g.get("type") == "ungated_irreversible_action"
+        }
+        governed_irrev = sum(
             1 for a in irreversible
-            if _has_authorisation_gate([], 0)  # would need lines — conservative: 0
+            if f"{a['filepath']}:{a['line']}" not in ungated_irrev_locs
         )
 
-        gamma = round(governed / total_decision_points, 2) if total_decision_points > 0 else 0.0
+        governed = governed_ai + governed_irrev
+        gamma = round(governed / total_decision_points, 2)
 
         if gamma >= 0.9:
             status = "ABOVE_THRESHOLD"
             interpretation = "Structural governance coverage meets the 90% sufficiency threshold."
         elif gamma >= 0.5:
             status = "PARTIAL_COVERAGE"
-            interpretation = f"Only {int(gamma*100)}% of decision points are governed. Significant gaps remain."
+            interpretation = (
+                f"Only {int(gamma*100)}% of decision points are governed. "
+                f"Significant gaps remain."
+            )
         else:
             status = "BELOW_THRESHOLD"
             interpretation = (
@@ -943,7 +1090,6 @@ class ScanEngine:
         high = sum(1 for g in gaps if g.get("severity") == "high")
         medium = sum(1 for g in gaps if g.get("severity") == "medium")
         ai_count = len(results.get("primitives", {}).get("ai_integrations", []))
-
         total = ai_count + len(results.get("primitives", {}).get("irreversible_actions", []))
         governed = gamma.get("governed_decision_points", 0)
         coverage = int((governed / total) * 100) if total > 0 else 100
@@ -959,6 +1105,7 @@ class ScanEngine:
             "governance_coverage": f"{coverage}%",
             "structural_gamma": gamma.get("proxy_value"),
             "governance_status": gamma.get("status"),
+            "context_profile": self.context_profile,
         }
 
     def _extract_critical_findings(self, gaps, dc_findings):
@@ -967,7 +1114,7 @@ class ScanEngine:
         for gap in critical[:5]:
             dc_match = next(
                 (d for d in dc_findings if d.get("location") == gap.get("location")),
-                None
+                None,
             )
             findings.append({
                 "location": gap.get("location", ""),
@@ -980,27 +1127,31 @@ class ScanEngine:
             })
         return findings
 
-    # ── Helper methods ────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _has_dynamic_prompt(self, content: str, line_num: int) -> bool:
         lines = content.splitlines()
-        context = "\n".join(lines[max(0, line_num-20):line_num+5])
+        context = "\n".join(lines[max(0, line_num - 20):line_num + 5])
         return any(s in context for s in [
             'f"', "f'", ".format(", "% (", "+ prompt",
-            "system_prompt =", "user_message =", "{query}", "{input}"
+            "system_prompt =", "user_message =", "{query}", "{input}",
         ])
 
     def _has_user_input_in_prompt(self, content: str, line_num: int) -> bool:
         lines = content.splitlines()
-        context = "\n".join(lines[max(0, line_num-30):line_num+5])
-        user_signals = ["request.", "req.", "user_input", "user_message",
-                        "query", "input_text", "body", "form_data"]
+        context = "\n".join(lines[max(0, line_num - 30):line_num + 5])
+        user_signals = [
+            "request.", "req.", "user_input", "user_message",
+            "query", "input_text", "body", "form_data",
+        ]
         prompt_signals = ["prompt", "messages", "content", "system"]
-        return (any(s in context for s in user_signals) and
-                any(s in context for s in prompt_signals))
+        return (
+            any(s in context for s in user_signals)
+            and any(s in context for s in prompt_signals)
+        )
 
     def _detect_output_destination(self, lines: list, line_num: int) -> str:
-        search = lines[line_num:min(len(lines), line_num+15)]
+        search = lines[line_num:min(len(lines), line_num + 15)]
         text = "\n".join(search)
         if any(s in text for s in ["return response", "render", "jsonify", "send_response"]):
             return "user-facing response"
@@ -1013,7 +1164,7 @@ class ScanEngine:
         return "downstream processing"
 
     def _is_near_ai_call(self, lines: list, line_num: int, window: int = 10) -> bool:
-        search = lines[max(0, line_num-window):min(len(lines), line_num+window)]
+        search = lines[max(0, line_num - window):min(len(lines), line_num + window)]
         ai_signals = list(AI_PROVIDER_IMPORTS.keys()) + ["completion", "generate", "chat"]
         return any(any(s in line.lower() for s in ai_signals) for line in search)
 
