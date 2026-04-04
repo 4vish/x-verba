@@ -1,4 +1,4 @@
-X-Verba is the first static governance analyser — a tool that finds structural risk in code the way linters find bugs.
+X-Verba is the first static governance analyser — a tool that finds structural risk in code the way linters find bugs.test
 Static governance analysis is the discipline of detecting structural governance gaps in code — the boundaries, checks, and invariants that determine what a system is allowed to do and what it must never do.
 A free CLI that scans any codebase, finds unprotected decision points, and generates a governance template you can actually use. Works on any repo. No account required.
 Built by Super Semantics.
@@ -892,3 +892,4 @@ License
 X-Verba CLI is released under the MIT License.
 MIT means anyone can use it, fork it, embed it, build on it, or sell products on top of it. No restrictions. The implementation is open. Read the code. Verify the logic. The openness is intentional — a governance tool that cannot be inspected is a contradiction.
 The DC taxonomy, Stabilisation Operators, Legion signatures, and the Verbanatomy conceptual framework are the work of independent researchers, published under Creative Commons Attribution 4.0. They are not proprietary to Super Semantics. X-Verba's implementation is the work of Super Semantics.******
+test
