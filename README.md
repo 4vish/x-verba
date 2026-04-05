@@ -1,3 +1,4 @@
+![x-verba](https://img.shields.io/badge/Structural%20Gamma-0.0%20UNGOVERNED-red?style=flat-square)
 X-Verba is the first static governance analyser — a tool that finds structural risk in code the way linters find bugs.test
 Static governance analysis is the discipline of detecting structural governance gaps in code — the boundaries, checks, and invariants that determine what a system is allowed to do and what it must never do.
 A free CLI that scans any codebase, finds unprotected decision points, and generates a governance template you can actually use. Works on any repo. No account required.
