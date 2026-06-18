@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "x-verba"
+version = "0.4.0"
+description = "Find the governance gaps in your code before your users do."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+  { name = "Super Semantics", email = "hello@supersemantic.ai" }
+]
+keywords = [
+  "governance", "ai-safety", "static-analysis",
+  "drift-detection", "policy-as-code", "verbanatomy",
+  "agent-governance", "decision-graph"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Security",
+]
+# writer.py's `str | None` return annotations (PEP 604) are evaluated at
+# function-definition time and raise TypeError on 3.9, so 3.10 is the floor.
+requires-python = ">=3.10"
+dependencies = [
+  "click>=8.0",
+  "pyyaml>=6.0",
+  "rich>=13.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=7.0",
+]
+
+[project.scripts]
+x-verba = "x_verba.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/4vish/x-verba"
+Repository = "https://github.com/4vish/x-verba"
+Documentation = "https://github.com/4vish/x-verba#readme"
+
+[tool.setuptools]
+packages = ["x_verba"]
+
+[tool.setuptools.package-data]
+x_verba = ["data/*.json", "data/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+
+[tool.xverba]
+# Default configuration for x-verba scan.
+# Override any of these via CLI flags.
+context_profile = "ai-app"
+output_formats = ["yaml"]
+generate_test_matrix = true
+strict_ai_only = false
