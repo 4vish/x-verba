@@ -784,8 +784,14 @@ class OutputWriter:
 
     def _render_dc_findings_yaml(self, dc_findings: list) -> str:
         finding_data = []
+        aggregate_i11 = None
 
         for i, finding in enumerate(dc_findings, 1):
+            # R1 + R5: DC-I11 aggregate rendered as a structural/informational block
+            if finding.get("aggregate") and finding.get("dc_code") == "DC-I11":
+                aggregate_i11 = finding
+                continue
+
             contraindications = finding.get(
                 "stabiliser_recommendation", {}
             ).get("contraindications", [])
@@ -825,6 +831,30 @@ class OutputWriter:
                     "confirmed": None,
                     "invariant_ref": None,
                     "terminal_state_ref": None,
+                }
+            })
+
+        if aggregate_i11:
+            count = aggregate_i11.get("aggregate_count", 0)
+            locs = aggregate_i11.get("aggregate_locations", [])
+            finding_data.append({
+                "DC-I11-AGGREGATE": {
+                    "severity": "informational",
+                    "note": (
+                        "DC-I11 is a systemic property — one aggregate replaces "
+                        f"{count} per-call-site findings."
+                    ),
+                    "code": "DC-I11",
+                    "name": aggregate_i11.get("dc_name", "Evaluative Decoupling"),
+                    "total_instances": count,
+                    "representative_locations": locs[:10],
+                    "recommendation": (
+                        "Implement a governance checkpoint layer at your API entry "
+                        "points rather than per-call-site."
+                    ),
+                    # Fields for developer to fill in
+                    "confirmed": None,
+                    "governance_layer_location": None,
                 }
             })
 
@@ -1352,6 +1382,34 @@ class OutputWriter:
             lines.append("## Failure mode candidates")
             lines.append("")
             for finding in dc_findings:
+                # R1 + R5: aggregate DC-I11 gets its own concise block
+                if finding.get("aggregate") and finding.get("dc_code") == "DC-I11":
+                    count = finding.get("aggregate_count", 0)
+                    locs = finding.get("aggregate_locations", [])
+                    lines.append(
+                        f"### DC-I11 {finding.get('dc_name', 'Evaluative Decoupling')} "
+                        f"(Tier {finding.get('tier', '')}) — informational"
+                    )
+                    lines.append("")
+                    lines.append(
+                        f"**{count} AI call {'site' if count == 1 else 'sites'} "
+                        f"without a governance checkpoint** (scan-level aggregate)"
+                    )
+                    lines.append("")
+                    lines.append(finding.get("plain_english", ""))
+                    lines.append("")
+                    lines.append(
+                        "**Recommendation:** Implement a governance checkpoint layer "
+                        "at your API entry points rather than per-call-site."
+                    )
+                    if locs:
+                        lines.append("")
+                        lines.append("**Representative locations:**")
+                        for loc in locs[:10]:
+                            lines.append(f"- `{loc}`")
+                    lines.append("")
+                    continue
+
                 lines.append(
                     f"### {finding['dc_code']} {finding['dc_name']} "
                     f"(Tier {finding['tier']})"

@@ -47,9 +47,9 @@ def main():
 @click.argument("path", default=".", type=click.Path(exists=True))
 @click.option(
     "--format", "output_format",
-    type=click.Choice(["text", "json"], case_sensitive=False),
+    type=click.Choice(["text", "json", "yaml", "md"], case_sensitive=False),
     default="text",
-    help="Output format. text = governance scorecard, json = full machine-readable results",
+    help="Output format. text = governance scorecard, json = full results, yaml/md = governance contract",
 )
 @click.option(
     "--output", "-o",
@@ -105,9 +105,21 @@ def main():
         "regressions. Typical usage: --compare .verba/governance-baseline.json"
     ),
 )
+@click.option(
+    "--focus",
+    "focus_paths",
+    multiple=True,
+    type=click.Path(),
+    default=None,
+    help=(
+        "Restrict scan to files under these paths (repeatable). "
+        "Use for large monorepos to scan only entry point directories. "
+        "Example: --focus backend/api/routes/ --focus backend/workers/"
+    ),
+)
 def scan(
     path, output_format, output, identity_key, context_profile, strict_ai_only,
-    verbose, save_baseline, compare_path,
+    verbose, save_baseline, compare_path, focus_paths,
 ):
     """
     Scan any repo and generate a governance scorecard.
@@ -151,15 +163,18 @@ def scan(
     from engine import ScanEngine, OutputFormatter
 
     console.print()
+    subtitle = f"Governance scorecard  |  profile: {context_profile}"
+    if focus_paths:
+        subtitle += f"  |  focus: {', '.join(focus_paths)}"
     console.print(Panel(
         Text("X-Verba Scan", style="bold"),
-        subtitle=f"Governance scorecard  |  profile: {context_profile}",
+        subtitle=subtitle,
         border_style="dim",
     ))
     console.print()
 
     engine = ScanEngine(verbose=verbose, context_profile=context_profile)
-    results = engine.scan(path, identity_key=identity_key)
+    results = engine.scan(path, identity_key=identity_key, focus_paths=list(focus_paths) if focus_paths else None)
 
     if strict_ai_only and results.get("summary", {}).get("ai_integrations_detected", 0) == 0:
         console.print(
@@ -168,20 +183,26 @@ def scan(
         )
         raise SystemExit(1)
 
-    formatter = OutputFormatter()
-    report = formatter.format_report(results, fmt=output_format)
+    if output_format in ("yaml", "md"):
+        from writer import OutputWriter
+        writer = OutputWriter(results, output_format)
+        output_path = writer.write(output or None)
+        _print_terminal_summary(results, output_path)
+    else:
+        formatter = OutputFormatter()
+        report = formatter.format_report(results, fmt=output_format)
 
-    output_path = output
-    if not output_path:
-        ext = "json" if output_format == "json" else "txt"
-        verba_dir = Path(path) / ".verba"
-        verba_dir.mkdir(parents=True, exist_ok=True)
-        output_path = str(verba_dir / f"governance-report.{ext}")
+        output_path = output
+        if not output_path:
+            ext = "json" if output_format == "json" else "txt"
+            verba_dir = Path(path) / ".verba"
+            verba_dir.mkdir(parents=True, exist_ok=True)
+            output_path = str(verba_dir / f"governance-report.{ext}")
 
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(output_path).write_text(report, encoding="utf-8")
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_text(report, encoding="utf-8")
 
-    _print_terminal_summary(results, output_path)
+        _print_terminal_summary(results, output_path)
 
     if save_baseline:
         from baseline import BaselineStore
@@ -446,6 +467,23 @@ def compile(schema, output, validate_only):
 
 # ── Terminal output helpers ───────────────────────────────────────────────────
 
+def _tendency_explanation(tendency: dict) -> str:
+    """One-sentence explanation of what is driving the tendency state."""
+    state = tendency.get("state", "")
+    if state == "stable":
+        return ""
+    reasons = []
+    if tendency.get("critical_ungoverned_ratio", 0) > 0.3:
+        reasons.append("ungoverned critical decisions")
+    if tendency.get("t_amplification_active"):
+        reasons.append("T-Amplification active on high-centrality decisions")
+    if tendency.get("ungoverned_decision_density", 0) > 0.5:
+        reasons.append("high ungoverned decision density")
+    if not reasons:
+        reasons.append("weak Pre-Node coverage across decision points")
+    return f"Tendency driven primarily by: {', '.join(reasons)}."
+
+
 def _print_terminal_summary(results, output_path):
     """Print clean terminal summary of scan results."""
     console.print()
@@ -482,11 +520,15 @@ def _print_terminal_summary(results, output_path):
 
     console.print(f"[dim]Files scanned:[/dim]          {files}")
     console.print(f"[dim]AI integrations:[/dim]        {ai_count}")
+    console.print(f"[dim]Candidate Gov. Nodes:[/dim]   {ai_count}  [dim](X-Verba inferences — confirm in contract)[/dim]")
     console.print(f"[dim]Decision points:[/dim]        {decision_pts}")
     console.print(f"[dim]Context profile:[/dim]        {profile}")
     console.print(f"[dim]Language coverage:[/dim]      {lang_frac:.0%}")
     gamma_str = f"{gamma_val:.4f}" if gamma_val is not None else "N/A"
     console.print(f"[dim]Structural Gamma:[/dim]       {gamma_str}  [dim]({gamma_status})[/dim]")
+    if gamma_val is not None:
+        gamma_pct = int(round(gamma_val * 100))
+        console.print(f"[dim]  {gamma_pct}% of governance-relevant decision points have an observable governance checkpoint.[/dim]")
 
     if tendency_state == "failure":
         console.print(f"[bold red]Tendency:[/bold red]               {tendency_state.upper()}")
@@ -494,6 +536,9 @@ def _print_terminal_summary(results, output_path):
         console.print(f"[green]Tendency:[/green]               {tendency_state.upper()}")
     else:
         console.print(f"[dim]Tendency:[/dim]               {tendency_state.upper()}")
+    tendency_reason = _tendency_explanation(tendency)
+    if tendency_reason:
+        console.print(f"[dim]  {tendency_reason}[/dim]")
     console.print()
 
     if critical > 0:
@@ -514,6 +559,25 @@ def _print_terminal_summary(results, output_path):
             f"[dim]MEDIUM: {medium}[/dim]"
         )
     console.print()
+
+    # R1 + R5: show DC-I11 aggregate in a separate structural/informational section
+    dc_i11 = stats.get("dc_i11_aggregate")
+    if dc_i11:
+        count = dc_i11.get("aggregate_count", 0)
+        rep = dc_i11.get("aggregate_locations", [])
+        console.print("[bold]Structural findings[/bold] [dim](informational)[/dim]")
+        console.print(
+            f"  [yellow]~[/yellow]  DC-I11 Evaluative Decoupling — "
+            f"[dim]{count} AI call {'site' if count == 1 else 'sites'} without a governance checkpoint.[/dim]"
+        )
+        console.print(
+            "[dim]     Implement a governance layer at API entry points, "
+            "not per-call-site.[/dim]"
+        )
+        if rep:
+            console.print(f"[dim]     Examples: {', '.join(rep[:3])}"
+                          + (f" (+{count - 3} more)" if count > 3 else "") + "[/dim]")
+        console.print()
 
     top = stats.get("top_decisions", {}).get("most_influential", [])[:3]
     if top:
