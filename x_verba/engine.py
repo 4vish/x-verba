@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from models import (
+from .models import (
     TendencyState,
     EnhancedConsequence,
     AgentNode, AgentEdge, AgentGraph,
@@ -48,10 +48,10 @@ from models import (
     PreNode, TerminalState, Invariant, GovernanceGap,
     EvidenceNode, Legion,
 )
-from graph import pagerank as _pagerank, critical_path as _critical_path
+from .graph import pagerank as _pagerank, critical_path as _critical_path
 from graph import reachability_from as _reachability_from
 from graph import propagation_potential as _propagation_potential
-from graph import PAGERANK_DAMPING, PAGERANK_ITERATIONS
+from .graph import pagerank_DAMPING, PAGERANK_ITERATIONS
 
 console = Console()
 
@@ -5245,3 +5245,5 @@ class OutputFormatter:
         if isinstance(value, (list, tuple)):
             return [OutputFormatter._json_safe(v) for v in value]
         return value
+
+

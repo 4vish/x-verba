@@ -36,8 +36,8 @@ import yaml
 from pathlib import Path
 from datetime import datetime, timezone
 
-from engine import OutputFormatter
-from qa_engine import _dc_qa_recommendations
+from .engine import OutputFormatter
+from .qa_engine import _dc_qa_recommendations
 
 # Mirrors engine.py's GAMMA_ABOVE_THRESHOLD / GAMMA_PARTIAL_THRESHOLD —
 # the canonical Gamma status bands (Regeneration Handover, Part 11).
@@ -1498,3 +1498,5 @@ class OutputWriter:
         )
 
         return "\n".join(lines)
+
+
