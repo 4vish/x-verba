@@ -1,7 +1,7 @@
 """Propagation-risk ranking over a DecisionGraph (TASK-012). Reference: Regeneration Handover, Part 9."""
 from typing import Dict, List
 
-from models import DecisionGraph
+from ..models import DecisionGraph
 from .critical_path import reachability_from
 
 # Each ungoverned node on a propagation path multiplies the path's risk by
@@ -39,3 +39,4 @@ def _propagation_risk_score(path: List[str], decision_graph: DecisionGraph) -> f
             if not node.governed:
                 ungoverned_count += 1
     return risk * (1 + ungoverned_count * PROPAGATION_UNGOVERNED_WEIGHT)
+

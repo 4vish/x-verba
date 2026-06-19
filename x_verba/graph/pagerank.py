@@ -1,7 +1,7 @@
 """PageRank over a DecisionGraph (TASK-009). Reference: Regeneration Handover, Part 9."""
 from typing import Dict
 
-from models import DecisionGraph
+from ..models import DecisionGraph
 
 # PageRank defaults (Regeneration Handover, Part 9).
 PAGERANK_DAMPING = 0.85
@@ -45,3 +45,4 @@ def pagerank(
         scores = new_scores
 
     return dict(sorted(scores.items(), key=lambda item: item[1], reverse=True))
+

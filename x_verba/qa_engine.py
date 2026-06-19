@@ -13,7 +13,7 @@ All severity/threshold decisions are fixed, documented constants below.
 """
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from models import DeltaDirection, MetricDelta, Severity, VerificationResult
+from .models import DeltaDirection, MetricDelta, Severity, VerificationResult
 
 # ── Severity constants (Section 2.4 of the governance baselines plan) ───────
 
@@ -515,3 +515,4 @@ def _dc_qa_recommendations(legion_matches: list) -> list:
             })
 
     return recommendations
+

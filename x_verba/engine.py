@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from models import (
+from .models import (
     TendencyState,
     EnhancedConsequence,
     AgentNode, AgentEdge, AgentGraph,
@@ -48,10 +48,10 @@ from models import (
     PreNode, TerminalState, Invariant, GovernanceGap,
     EvidenceNode, Legion,
 )
-from graph import pagerank as _pagerank, critical_path as _critical_path
-from graph import reachability_from as _reachability_from
-from graph import propagation_potential as _propagation_potential
-from graph import PAGERANK_DAMPING, PAGERANK_ITERATIONS
+from .graph import pagerank as _pagerank, critical_path as _critical_path
+from .graph import reachability_from as _reachability_from
+from .graph import propagation_potential as _propagation_potential
+from .graph import PAGERANK_DAMPING, PAGERANK_ITERATIONS
 
 console = Console()
 
@@ -2577,48 +2577,13 @@ class ScanEngine:
             results["language_coverage"] = _compute_language_coverage(parsed)
             progress.update(t2, completed=True)
 
-            # In ai-app profile, exit cleanly if no AI found
-            if (
-                self.profile["require_ai_for_scan"]
-                and not primitives["ai_integrations"]
-            ):
-                results["summary"] = {
-                    "files_scanned": len(files),
-                    "ai_integrations_detected": 0,
-                    "critical": 0, "high": 0, "medium": 0,
-                    "total_gaps": 0,
-                    "dc_classes_detected": 0,
-                    "governance_coverage": "N/A",
-                    "structural_gamma": None,
-                    "gamma_variants": {
-                        "overall": GammaValue(value=None, status="NO_AI_INTEGRATIONS", governed=0, total=0).to_dict(),
-                    },
-                    "governance_status": "NO_AI_INTEGRATIONS",
-                    "context_profile": self.context_profile,
-                    "language_coverage": results.get("language_coverage", {}),
-                    "note": (
-                        "No AI integrations detected. X-Verba governs AI-integrated code. "
-                        "If this repo uses AI, check that imports match known providers. "
-                        "Use --context-profile general to scan all files regardless."
-                    ),
-                }
-                results["gaps"] = []
-                results["drift_classes"] = []
-                results["_legacy_gamma_proxy"] = {
-                    "proxy_value": None,
-                    "status": "NO_AI_INTEGRATIONS",
-                    "interpretation": "No AI integration points detected. Governance score not applicable.",
-                }
-                results["critical_findings"] = []
-                results["decision_points"] = primitives.get("decision_points", [])
-                results["consequences"] = primitives.get("consequences", [])
-                results["decision_point_gaps"] = []
-                results["agent_handovers"] = primitives.get("agent_handovers", [])
-                results["cluster_governance_gaps"] = []
-                results["terminal_states"] = primitives.get("terminal_states", [])
-                results["legion_matches"] = []
-                results["boundary_case_notes"] = []
-                return results
+            # In ai-app profile, a repo with no AI integrations is still a
+            # codebase with decision points, error handling, and control flow —
+            # structural governance analysis (Passes 3-16) must run regardless.
+            # The flag below is informational only; it is not used to skip analysis.
+            results["no_ai_context"] = bool(
+                self.profile["require_ai_for_scan"] and not primitives["ai_integrations"]
+            )
 
             t3 = progress.add_task("Pass 3 — Mapping Drift Classes...", total=None)
             dc_findings = self._match_dc_patterns(primitives, parsed)
@@ -5245,3 +5210,5 @@ class OutputFormatter:
         if isinstance(value, (list, tuple)):
             return [OutputFormatter._json_safe(v) for v in value]
         return value
+
+

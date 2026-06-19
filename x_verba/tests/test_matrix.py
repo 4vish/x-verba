@@ -309,39 +309,43 @@ def empty_results():
 class TestEmptyRepo:
     """
     With the default 'ai-app' context profile, a repo with no AI integrations
-    takes the early-exit path in ScanEngine.scan() (NO_AI_INTEGRATIONS) and
-    must NOT include the v0.4.0 graphs/inventories/metrics/algorithms keys —
-    but must still return a usable, backwards-compatible results dict.
+    still runs the full Pass 3-16 structural governance analysis — the
+    'ai-app' profile filters which findings are flagged as AI-adjacent, it
+    does not skip analysis. `no_ai_context` records that no AI integrations
+    were found, but Gamma, decision points, and v0.4.0 keys are still computed.
     """
 
-    def test_no_ai_integrations_early_exit(self, empty_results):
+    def test_scan_produces_gamma_even_without_ai(self, empty_results):
         summary = empty_results["summary"]
         assert summary["ai_integrations_detected"] == 0
-        assert summary["governance_status"] == "NO_AI_INTEGRATIONS"
+        assert empty_results["no_ai_context"] is True
+
+        # Gamma must always be a float, never None / NO_AI_INTEGRATIONS
+        assert summary["structural_gamma"] is not None
+        assert isinstance(summary["structural_gamma"], float)
+        assert summary["governance_status"] != "NO_AI_INTEGRATIONS"
 
         # Backwards-compatible keys still present
         for key in ("gaps", "drift_classes", "legion_matches", "decision_points",
                     "agent_handovers", "terminal_states"):
             assert key in empty_results
 
-        # v0.4.0 keys are NOT computed on the early-exit path
+        # v0.4.0 keys ARE computed — analysis is not skipped for non-AI repos
         for key in ("graphs", "inventories", "metrics", "algorithms"):
-            assert key not in empty_results
+            assert key in empty_results
 
-    def test_writer_handles_early_exit_results(self, empty_results):
-        """OutputWriter must degrade gracefully (skip sections 10-12) when
-        v0.4.0 keys are absent, and still produce a valid contract."""
+    def test_writer_handles_no_ai_context_results(self, empty_results):
+        """OutputWriter must still produce a full contract for a non-AI repo,
+        since structural governance analysis ran regardless of AI presence."""
         writer = OutputWriter(empty_results, "yaml")
         yaml_content = writer._render_yaml()
         data = yaml.safe_load(yaml_content)
 
         assert "system_identity" in data
         assert "scan_summary" in data
-        assert "governance_intelligence" not in data
-        assert "agent_governance" not in data
-        assert "critical_decisions" not in data
+        assert "governance_intelligence" in data
 
-    def test_formatter_handles_early_exit_results(self, empty_results):
+    def test_formatter_handles_no_ai_context_results(self, empty_results):
         formatter = OutputFormatter()
         text_report = formatter.format_report(empty_results, fmt="text")
         assert isinstance(text_report, str)

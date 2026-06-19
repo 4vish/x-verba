@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from engine import OutputFormatter
+from .engine import OutputFormatter
 
 BASELINE_FILENAME = "governance-baseline.json"
 HISTORY_DIRNAME = "governance-history"
@@ -65,3 +65,4 @@ class BaselineStore:
         payload = OutputFormatter._json_safe(results)
         archive_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return archive_path
+

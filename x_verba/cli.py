@@ -160,7 +160,7 @@ def scan(
       x-verba scan . --compare .verba/governance-baseline.json
       x-verba scan . --compare .verba/governance-history/scan-001.json
     """
-    from engine import ScanEngine, OutputFormatter
+    from .engine import ScanEngine, OutputFormatter
 
     console.print()
     subtitle = f"Governance scorecard  |  profile: {context_profile}"
@@ -184,7 +184,7 @@ def scan(
         raise SystemExit(1)
 
     if output_format in ("yaml", "md"):
-        from writer import OutputWriter
+        from .writer import OutputWriter
         writer = OutputWriter(results, output_format)
         output_path = writer.write(output or None)
         _print_terminal_summary(results, output_path)
@@ -205,7 +205,7 @@ def scan(
         _print_terminal_summary(results, output_path)
 
     if save_baseline:
-        from baseline import BaselineStore
+        from .baseline import BaselineStore
         store = BaselineStore(Path(path))
         baseline_file = store.save(results)
         store.archive(results)
@@ -213,9 +213,9 @@ def scan(
         console.print()
 
     if compare_path is not None:
-        from baseline import BaselineStore, BaselineNotFoundError
+        from .baseline import BaselineStore, BaselineNotFoundError
         from qa_engine import GovernanceVerificationEngine
-        from writer import OutputWriter
+        from .writer import OutputWriter
         store = BaselineStore(Path(path))
         target = Path(compare_path) if compare_path else None
         try:
@@ -276,9 +276,9 @@ def qa(path, schema, output_format, fail_on_critical):
       x-verba qa . --schema .verba/governance-baseline.json --format json
     """
     import json as _json
-    from engine import ScanEngine, OutputFormatter
+    from .engine import ScanEngine, OutputFormatter
     from qa_engine import GovernanceVerificationEngine
-    from writer import OutputWriter
+    from .writer import OutputWriter
 
     console.print()
     console.print(Panel(
@@ -334,7 +334,7 @@ def forensics(path, identity_key, output_format):
       x-verba forensics ./repo --identity-key my-system-v1.0
     """
     from forensics_engine import ForensicsEngine
-    from writer import OutputWriter
+    from .writer import OutputWriter
 
     console.print()
     console.print(Panel(
@@ -714,3 +714,6 @@ def _print_compile_summary(results):
 
 if __name__ == "__main__":
     main()
+
+
+

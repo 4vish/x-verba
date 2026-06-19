@@ -1,7 +1,7 @@
 """Critical path and reachability over a DecisionGraph (TASK-010/011)."""
 from typing import Dict, List
 
-from models import DecisionGraph
+from ..models import DecisionGraph
 
 
 def critical_path(decision_graph: DecisionGraph) -> List[str]:
@@ -70,3 +70,4 @@ def reachability_from(
 
     dfs(start_node, [], 0)
     return results
+

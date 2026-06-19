@@ -36,8 +36,8 @@ import yaml
 from pathlib import Path
 from datetime import datetime, timezone
 
-from engine import OutputFormatter
-from qa_engine import _dc_qa_recommendations
+from .engine import OutputFormatter
+from .qa_engine import _dc_qa_recommendations
 
 # Mirrors engine.py's GAMMA_ABOVE_THRESHOLD / GAMMA_PARTIAL_THRESHOLD —
 # the canonical Gamma status bands (Regeneration Handover, Part 11).
@@ -53,7 +53,11 @@ GAMMA_PROXY_NOTE = (
 def _gamma_interpretation(status: str, value) -> str:
     """Human-readable interpretation of a canonical GammaValue, by status."""
     if status == "NO_AI_INTEGRATIONS":
-        return "No AI integration points detected. Governance score not applicable."
+        return (
+            "No AI integration points detected. Structural governance analysis "
+            "still applies to decision points, error handling, and control flow "
+            "regardless of AI presence — see the Gamma value above."
+        )
     if status == "ABOVE_THRESHOLD":
         return f"Structural governance coverage meets the {int(GAMMA_ABOVE_THRESHOLD*100)}% sufficiency threshold."
     if status == "PARTIAL_COVERAGE":
@@ -1498,3 +1502,5 @@ class OutputWriter:
         )
 
         return "\n".join(lines)
+
+

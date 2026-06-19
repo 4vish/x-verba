@@ -9,7 +9,7 @@ description = "Find the governance gaps in your code before your users do."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-  { name = "Super Semantics", email = "hello@supersemantic.ai" }
+  { name = "Super Semantics", email = "hello@supersemantics.org" }
 ]
 keywords = [
   "governance", "ai-safety", "static-analysis",
@@ -50,7 +50,7 @@ Repository = "https://github.com/4vish/x-verba"
 Documentation = "https://github.com/4vish/x-verba#readme"
 
 [tool.setuptools]
-packages = ["x_verba"]
+packages = ["x_verba", "x_verba.graph", "x_verba.tests"]
 
 [tool.setuptools.package-data]
 x_verba = ["data/*.json", "data/*.md"]
@@ -66,3 +66,4 @@ context_profile = "ai-app"
 output_formats = ["yaml"]
 generate_test_matrix = true
 strict_ai_only = false
+
