@@ -252,8 +252,7 @@ X-Verba looks for safeguards you've already built:
 ## Installation
 
 ```bash
-pip install x-verba        # Python 3.9+
-npm install -g x-verba     # Node.js 18+
+pip install x-verba        # Python 3.10+
 ```
 
 ---

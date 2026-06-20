@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.2
+
+Bug-fix release. `x-verba qa` and `x-verba scan --compare` were both broken
+in every published version up to and including `0.4.1` — neither command
+could actually run.
+
+### Fixed
+
+- **`x-verba qa` crashed immediately** with
+  `ModuleNotFoundError: No module named 'qa_engine'` — `cli.py`'s `qa`
+  command imported it as `from qa_engine import ...` instead of
+  `from .qa_engine import ...`. The same bug also existed in
+  `scan --compare`'s import of the same module.
+- **`x-verba scan --format yaml --compare ...` crashed** with
+  `NameError: formatter is not defined` — the `--compare` branch reused a
+  `formatter` variable that was only ever assigned when `--format` was
+  `text` or `json`, never when it was `yaml` or `md`.
+- **Removed the `npm install -g x-verba` line from the README** — there is
+  no published npm package (`npm view x-verba` returns 404). Also corrected
+  the Python version floor in the install instructions from `3.9+` to
+  `3.10+`, matching `pyproject.toml`'s actual `requires-python`.
+
+### Verified against
+
+- `karpathy/minGPT` — `scan --save-baseline`, `scan --compare`,
+  `scan --format yaml --compare`, and standalone `qa` all run end to end.
+
 ## 0.4.1
 
 Bug-fix release. No new detection logic, no scoring changes — every fix below

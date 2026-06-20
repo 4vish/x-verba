@@ -36,7 +36,7 @@ BANNER = """
 
 
 @click.group()
-@click.version_option(version="0.4.1", prog_name="x-verba")
+@click.version_option(version="0.4.2", prog_name="x-verba")
 def main():
     """
     X-Verba — Find the governance gaps in your AI code before your users do.
@@ -241,7 +241,7 @@ def scan(
 
     if compare_path is not None:
         from .baseline import BaselineStore, BaselineNotFoundError
-        from qa_engine import GovernanceVerificationEngine
+        from .qa_engine import GovernanceVerificationEngine
         from .writer import OutputWriter
         store = BaselineStore(Path(path))
         target = Path(compare_path) if compare_path else None
@@ -250,7 +250,7 @@ def scan(
         except BaselineNotFoundError as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
             raise SystemExit(1)
-        current = formatter.format_report(results, fmt="json")
+        current = OutputFormatter().format_report(results, fmt="json")
         import json as _json
         current_dict = _json.loads(current)
         verification = GovernanceVerificationEngine().compare(baseline, current_dict)
@@ -304,7 +304,7 @@ def qa(path, schema, output_format, fail_on_critical):
     """
     import json as _json
     from .engine import ScanEngine, OutputFormatter
-    from qa_engine import GovernanceVerificationEngine
+    from .qa_engine import GovernanceVerificationEngine
     from .writer import OutputWriter
 
     console.print()
