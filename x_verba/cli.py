@@ -2,11 +2,23 @@
 X-Verba CLI entry point — v0.4.0
 Find the governance gaps in your AI code before your users do.
 """
+import sys
 import click
 from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+
+# Windows consoles default to a legacy code page (e.g. cp1252) that can't
+# represent the en/em-dashes and box-drawing characters used in the report
+# output, garbling them into "?" — reconfigure stdout/stderr to UTF-8 before
+# any output is printed. Safe to skip if the stream doesn't support it.
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
 console = Console()
 
@@ -24,7 +36,7 @@ BANNER = """
 
 
 @click.group()
-@click.version_option(version="0.4.0", prog_name="x-verba")
+@click.version_option(version="0.4.1", prog_name="x-verba")
 def main():
     """
     X-Verba — Find the governance gaps in your AI code before your users do.
@@ -183,10 +195,16 @@ def scan(
         )
         raise SystemExit(1)
 
+    verba_dir = Path(path) / ".verba"
+
     if output_format in ("yaml", "md"):
         from .writer import OutputWriter
         writer = OutputWriter(results, output_format)
-        output_path = writer.write(output or None)
+        output_path = output
+        if not output_path:
+            verba_dir.mkdir(parents=True, exist_ok=True)
+            output_path = str(verba_dir / f"governance.{output_format}")
+        output_path = writer.write(output_path)
         _print_terminal_summary(results, output_path)
     else:
         formatter = OutputFormatter()
@@ -195,7 +213,6 @@ def scan(
         output_path = output
         if not output_path:
             ext = "json" if output_format == "json" else "txt"
-            verba_dir = Path(path) / ".verba"
             verba_dir.mkdir(parents=True, exist_ok=True)
             output_path = str(verba_dir / f"governance-report.{ext}")
 
@@ -203,6 +220,16 @@ def scan(
         Path(output_path).write_text(report, encoding="utf-8")
 
         _print_terminal_summary(results, output_path)
+
+        # The text/json report is a scorecard, not the deliverable developers
+        # act on. Always generate the governance contract too, so `x-verba
+        # scan` alone is enough to get something usable for implementation.
+        from .writer import OutputWriter
+        contract_writer = OutputWriter(results, "yaml")
+        verba_dir.mkdir(parents=True, exist_ok=True)
+        contract_path = contract_writer.write(str(verba_dir / "governance.yaml"))
+        console.print(f"[dim]Governance contract:[/dim] {contract_path}")
+        console.print()
 
     if save_baseline:
         from .baseline import BaselineStore

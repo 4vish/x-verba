@@ -1,4 +1,4 @@
 @echo off
-cd /d "H:\Claude Code Building CLI Tool\x-verba-v0.4.0-mvp1\x_verba"
+cd /d "%~dp0"
 set PYTHONIOENCODING=utf-8
-python -m cli %*
+py -m x_verba.cli %*

@@ -30,6 +30,7 @@ import re
 import ast
 import json
 import hashlib
+import warnings
 from pathlib import Path
 from typing import Optional, List, Dict
 from dataclasses import dataclass, field, asdict
@@ -54,6 +55,17 @@ from .graph import propagation_potential as _propagation_potential
 from .graph import PAGERANK_DAMPING, PAGERANK_ITERATIONS
 
 console = Console()
+
+
+def _ast_parse_quiet(source: str, filepath: str):
+    """ast.parse() with the scanned file's own path attached (so any
+    SyntaxWarning points at the real file, not '<unknown>') and the
+    scanned repo's own lint-level warnings suppressed — X-Verba reports
+    structural governance gaps, not third-party code-quality issues."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        return ast.parse(source, filename=filepath)
+
 
 TAXONOMY_PATH = Path(__file__).parent.parent / "taxonomy"
 
@@ -354,7 +366,7 @@ class ASTAnalyser:
         self.assignments = {}
 
         try:
-            tree = ast.parse(source)
+            tree = _ast_parse_quiet(source, filepath)
         except (SyntaxError, ValueError, RecursionError):
             return {"ai_calls": [], "imports": {}, "parse_error": True}
 
@@ -659,7 +671,7 @@ class DecisionPointAnalyser:
 
     def analyse(self, source: str, filepath: str) -> list:
         try:
-            tree = ast.parse(source)
+            tree = _ast_parse_quiet(source, filepath)
         except (SyntaxError, ValueError, RecursionError):
             return []
 
@@ -1246,7 +1258,7 @@ class AgentHandoverAnalyser:
 
     def analyse(self, source: str, filepath: str, lines: list) -> list:
         try:
-            tree = ast.parse(source)
+            tree = _ast_parse_quiet(source, filepath)
         except (SyntaxError, ValueError, RecursionError):
             return []
 
@@ -2552,7 +2564,7 @@ class ScanEngine:
             "scan_date": datetime.now(timezone.utc).isoformat(),
             "repo": str(path),
             "identity_key": identity_key,
-            "verba_version": "0.4.0",
+            "verba_version": "0.4.1",
             "context_profile": self.context_profile,
             "reviewed": False,
             "focus_paths": focus_paths or [],
