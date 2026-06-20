@@ -1,0 +1,166 @@
+════════════════════════════════════════════════════════════════════════════════
+X-VERBA SCAN RESULTS
+════════════════════════════════════════════════════════════════════════════════
+
+Repository:  C:\Users\OEM\AppData\Local\GitHubDesktop\app-3.5.12\gogcli
+Scan Date:   2026-06-20T06:12:11.024869+00:00
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE SCORECARD
+════════════════════════════════════════════════════════════════════════════════
+
+Structural Gamma:                  0.11 / 1.0  [BELOW_THRESHOLD]
+  (11% of governance-relevant decision points have an observable governance checkpoint.)
+  ├─ Total Decision Points:        16850
+  ├─ Governed Decision Points:     1776 (11%)
+  └─ Ungoverned Decision Points:   15074 (89%)
+
+Tendency State:                     FAILURE
+  ├─ T-Amplification Active:       No (10 high-centrality ungoverned decisions)
+  └─ Pre-Node Proximity:           CRITICAL (>50% of critical decisions ungoverned)
+  Note: Tendency driven primarily by: ungoverned critical decisions, high ungoverned decision density.
+
+════════════════════════════════════════════════════════════════════════════════
+AI VISIBILITY
+════════════════════════════════════════════════════════════════════════════════
+
+AI Integrations Detected:          0
+  ├─ Governed:                     0 (0%)
+  ├─ Ungoverned:                   0 (0%)
+  └─ High-Risk Patterns:           0 (high temperature + user input + dynamic prompt)
+
+Candidate Governance Nodes:        0  (X-Verba inferences — confirm or correct in governance contract)
+
+════════════════════════════════════════════════════════════════════════════════
+AGENT VISIBILITY
+════════════════════════════════════════════════════════════════════════════════
+
+Agents Detected:                    0
+Agent Handovers Detected:           0
+  ├─ Governed:                     0 (0%)
+  └─ Ungoverned:                   0 (0%)
+
+Agent Chains:                        0
+  ├─ Fully Governed:               0
+  ├─ Partially Governed:           0
+  └─ Ungoverned:                   0
+
+Agent Clusters:                      0
+  ├─ Cluster Risk (Avg Chain Risk): 0.00
+  └─ Cluster Governance Gaps:      0 (0 with 2+ ungated handovers)
+
+════════════════════════════════════════════════════════════════════════════════
+DECISION VISIBILITY
+════════════════════════════════════════════════════════════════════════════════
+
+Decision Points Detected:            16850
+  ├─ Low Consequence          0 (0%)
+  ├─ Medium Consequence       0 (0%)
+  ├─ High Consequence         16833 (100%)
+  └─ Critical Consequence     17 (0%)
+
+Governance by Consequence Type:
+  ├─ external_api_call (22):  8 governed, 14 ungoverned
+  ├─ file_write (2):  1 governed, 1 ungoverned
+  ├─ database_write (1):  0 governed, 1 ungoverned
+  └─ database_delete (1):  0 governed, 1 ungoverned
+
+Decision Influence Ranking (PageRank):
+  ├─ Most Influential Decision:   internal\cmd\comment_ops.go:98 (score=0.000051, criticality=0.50)
+  └─ Governance Choke Point:      internal\cmd\comment_ops.go:98 (score=0.000051, ungoverned)
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE COVERAGE
+════════════════════════════════════════════════════════════════════════════════
+
+Overall Coverage:                    11%
+
+Coverage by Decision Type:
+  ├─ conditional_branch       10%
+  ├─ function_call            43%
+  ├─ loop                     14%
+  ├─ ternary                  50%
+  └─ try_except               9%
+
+Coverage by Checkpoint Type:
+  └─ Control Flow             1777 decisions
+
+Critical Decision Coverage:
+  ├─ Critical Decisions:           17
+  ├─ Governed:                     0 (0%)
+  └─ Ungoverned:                   17 (100%)
+
+════════════════════════════════════════════════════════════════════════════════
+CRITICAL FINDINGS
+════════════════════════════════════════════════════════════════════════════════
+
+1. internal\tracking\worker\src\index.ts:147
+     Risk:                Decision point (try_except) at internal\tracking\worker\src\index.ts:147 leads to a database action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=1.40, governed=False
+
+2. internal\cmd\analytics.go:56
+     Risk:                Decision point (conditional_branch) at internal\cmd\analytics.go:56 leads to a external_api action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=0.85, governed=False
+
+3. internal\cmd\classroom_courses.go:475
+     Risk:                Decision point (loop) at internal\cmd\classroom_courses.go:475 leads to a external_api action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=0.85, governed=False
+
+4. internal\cmd\classroom_courses.go:476
+     Risk:                Decision point (conditional_branch) at internal\cmd\classroom_courses.go:476 leads to a external_api action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=0.85, governed=False
+
+5. internal\cmd\classroom_courses.go:479
+     Risk:                Decision point (conditional_branch) at internal\cmd\classroom_courses.go:479 leads to a external_api action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=0.85, governed=False
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE GAPS SUMMARY
+════════════════════════════════════════════════════════════════════════════════
+
+Critical Governance Gaps:            18
+  ├─ Ungoverned Decision Point    17
+  └─ Ungated Irreversible Action  1
+
+High Governance Gaps:                0
+Medium Governance Gaps:              0
+
+Agent Handover Gaps:                 0 / 0 ungoverned
+Cluster Governance Gaps:             0
+Terminal States (Silent Failures):   3044
+
+════════════════════════════════════════════════════════════════════════════════
+DRIFT CLASS DETECTIONS
+════════════════════════════════════════════════════════════════════════════════
+
+DC-E14 — Unsanctioned Dependency               1 detection(s)  (STRUCTURAL 1)
+
+Behavioural Domains Affected:
+  └─ External APIs            1 detection(s)
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE RECOMMENDATIONS
+════════════════════════════════════════════════════════════════════════════════
+
+Immediate Actions (Critical): 1 items
+  1. Define what must be confirmed before this action executes. Define what happens if conditions are not met. — internal\backup\gmail\planner.go:76 [DC-E14]
+
+Short-term (High): 0 items
+  (none)
+
+Medium-term (Medium): 0 items
+  (none)
+
+Implementation order is based on:
+  - Decision criticality (business_impact x blast_radius x irreversibility)
+  - PageRank (most influential decisions first)
+  - Severity (critical > high > medium)
+
+════════════════════════════════════════════════════════════════════════════════
+End of Report
+════════════════════════════════════════════════════════════════════════════════

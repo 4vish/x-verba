@@ -1,0 +1,194 @@
+════════════════════════════════════════════════════════════════════════════════
+X-VERBA SCAN RESULTS
+════════════════════════════════════════════════════════════════════════════════
+
+Repository:  H:\Claude Code Building CLI Tool\dev-test\ECC
+Scan Date:   2026-06-20T19:25:02.758360+00:00
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE SCORECARD
+════════════════════════════════════════════════════════════════════════════════
+
+Structural Gamma:                  0.24 / 1.0  [BELOW_THRESHOLD]
+  (24% of governance-relevant decision points have an observable governance checkpoint.)
+  ├─ Total Decision Points:        8481
+  ├─ Governed Decision Points:     2012 (24%)
+  └─ Ungoverned Decision Points:   6469 (76%)
+
+Tendency State:                     FAILURE
+  ├─ T-Amplification Active:       No (10 high-centrality ungoverned decisions)
+  └─ Pre-Node Proximity:           CRITICAL (>50% of critical decisions ungoverned)
+  Note: Tendency driven primarily by: ungoverned critical decisions, high ungoverned decision density.
+
+════════════════════════════════════════════════════════════════════════════════
+AI VISIBILITY
+════════════════════════════════════════════════════════════════════════════════
+
+AI Integrations Detected:          10
+  ├─ Governed:                     0 (0%)
+  ├─ Ungoverned:                   10 (100%)
+  └─ High-Risk Patterns:           0 (high temperature + user input + dynamic prompt)
+
+Candidate Governance Nodes:        10  (X-Verba inferences — confirm or correct in governance contract)
+
+Providers:
+  ├─ Openai                     6
+  ├─ Ai_Framework               3
+  └─ Anthropic                  1
+
+AI-Related Drift Class Findings:    1
+  └─ DC-I11                     1
+
+════════════════════════════════════════════════════════════════════════════════
+AGENT VISIBILITY
+════════════════════════════════════════════════════════════════════════════════
+
+Agents Detected:                    0
+Agent Handovers Detected:           0
+  ├─ Governed:                     0 (0%)
+  └─ Ungoverned:                   0 (0%)
+
+Agent Chains:                        0
+  ├─ Fully Governed:               0
+  ├─ Partially Governed:           0
+  └─ Ungoverned:                   0
+
+Agent Clusters:                      0
+  ├─ Cluster Risk (Avg Chain Risk): 0.00
+  └─ Cluster Governance Gaps:      0 (0 with 2+ ungated handovers)
+
+════════════════════════════════════════════════════════════════════════════════
+DECISION VISIBILITY
+════════════════════════════════════════════════════════════════════════════════
+
+Decision Points Detected:            8481
+  ├─ Low Consequence          0 (0%)
+  ├─ Medium Consequence       0 (0%)
+  ├─ High Consequence         8408 (99%)
+  └─ Critical Consequence     73 (1%)
+
+Governance by Consequence Type:
+  ├─ state_mutation (360):  170 governed, 190 ungoverned
+  ├─ file_write (51):  22 governed, 29 ungoverned
+  ├─ database_write (30):  2 governed, 28 ungoverned
+  ├─ system_command (18):  9 governed, 9 ungoverned
+  ├─ external_api_call (5):  1 governed, 4 ungoverned
+  ├─ database_delete (3):  1 governed, 2 ungoverned
+  └─ file_delete (2):  1 governed, 1 ungoverned
+
+Decision Influence Ranking (PageRank):
+  ├─ Most Influential Decision:   skills\skill-comply\scripts\report.py:125 (score=0.000210, criticality=0.50)
+  └─ Governance Choke Point:      skills\skill-comply\scripts\report.py:125 (score=0.000210, ungoverned)
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE COVERAGE
+════════════════════════════════════════════════════════════════════════════════
+
+Overall Coverage:                    24%
+
+Coverage by Decision Type:
+  ├─ agent_invocation         0%
+  ├─ conditional_branch       23%
+  ├─ function_call            53%
+  ├─ loop                     24%
+  ├─ ternary                  21%
+  └─ try_except               24%
+
+Coverage by Checkpoint Type:
+  ├─ Control Flow             1906 decisions
+  └─ Caller Guard             107 decisions
+
+Critical Decision Coverage:
+  ├─ Critical Decisions:           73
+  ├─ Governed:                     0 (0%)
+  └─ Ungoverned:                   73 (100%)
+
+════════════════════════════════════════════════════════════════════════════════
+CRITICAL FINDINGS
+════════════════════════════════════════════════════════════════════════════════
+
+1. ecc2\src\session\manager.rs:2321
+     Risk:                Decision point (conditional_branch) at ecc2\src\session\manager.rs:2321 leads to a database action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=1.40, governed=False
+
+2. ecc2\src\session\store.rs:3402
+     Risk:                Decision point (conditional_branch) at ecc2\src\session\store.rs:3402 leads to a database action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=1.40, governed=False
+
+3. scripts\lib\agent-data-home.js:69
+     Risk:                Decision point (conditional_branch) at scripts\lib\agent-data-home.js:69 leads to a file_system action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=1.36, governed=False
+
+4. skills\continuous-learning-v2\scripts\instinct-cli.py:266
+     Risk:                Decision point (try_except) at skills\continuous-learning-v2\scripts\instinct-cli.py:266 leads to a file_system action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=1.36, governed=False
+
+5. skills\continuous-learning-v2\scripts\instinct-cli.py:330
+     Risk:                Decision point (try_except) at skills\continuous-learning-v2\scripts\instinct-cli.py:330 leads to a file_system action (irreversible) with no Pre-Node guarding it (strength 0.0).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=1.36, governed=False
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE GAPS SUMMARY
+════════════════════════════════════════════════════════════════════════════════
+
+Critical Governance Gaps:            83
+  ├─ Ungoverned Decision Point    72
+  ├─ Ungated Irreversible Action  10
+  └─ Missing Pre Node             1
+
+High Governance Gaps:                1
+Medium Governance Gaps:              193
+
+Agent Handover Gaps:                 0 / 0 ungoverned
+Cluster Governance Gaps:             0
+Terminal States (Silent Failures):   388
+
+════════════════════════════════════════════════════════════════════════════════
+DRIFT CLASS DETECTIONS
+════════════════════════════════════════════════════════════════════════════════
+
+DC-E13 — Propagating Corruption                2 detection(s)  (MEDIUM 1, STRUCTURAL 1)
+DC-E14 — Unsanctioned Dependency               10 detection(s)  (STRUCTURAL 10)
+DC-I11 — Evaluative Decoupling                 38 detection(s)  (HIGH 37, STRUCTURAL 1)
+DC-S3 — Silent Authority Expansion            1 detection(s)  (STRUCTURAL 1)
+
+Behavioural Domains Affected:
+  ├─ AI                       38 detection(s)
+  ├─ External APIs            10 detection(s)
+  ├─ State Mutation           2 detection(s)
+  └─ Config / State           1 detection(s)
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE RECOMMENDATIONS
+════════════════════════════════════════════════════════════════════════════════
+
+Immediate Actions (Critical): 11 items
+  1. Define what must be confirmed before this action executes. Define what happens if conditions are not met. — ecc2\src\session\manager.rs:1992 [DC-E14]
+  2. Define what must be checked before this AI call. What conditions must be met? What must the AI never return? — ecc_dashboard.py:806
+  3. Define what must be confirmed before this action executes. Define what happens if conditions are not met. — ecc2\src\main.rs:9125 [DC-E14]
+  4. Define what must be confirmed before this action executes. Define what happens if conditions are not met. — ecc2\src\main.rs:1983 [DC-E14]
+  5. Define what must be confirmed before this action executes. Define what happens if conditions are not met. — ecc2\src\main.rs:4453 [DC-E14]
+
+Short-term (High): 1 items
+  1. Define the severity and required authorisation level for this output. — ecc_dashboard.py:806
+
+Medium-term (Medium): 6 items
+  1. Formalise this check as an Invariant with CANNOT_BE_BYPASSED: TRUE. — ecc2\src\main.rs:5946
+  2. Formalise this check as an Invariant with CANNOT_BE_BYPASSED: TRUE. — ecc2\src\main.rs:5819
+  3. Formalise this check as an Invariant with CANNOT_BE_BYPASSED: TRUE. — src\llm\providers\astraflow.py:126
+  4. Formalise this check as an Invariant with CANNOT_BE_BYPASSED: TRUE. — src\llm\providers\atlas.py:143
+  5. Formalise this check as an Invariant with CANNOT_BE_BYPASSED: TRUE. — src\llm\providers\claude.py:113
+
+Implementation order is based on:
+  - Decision criticality (business_impact x blast_radius x irreversibility)
+  - PageRank (most influential decisions first)
+  - Severity (critical > high > medium)
+
+════════════════════════════════════════════════════════════════════════════════
+End of Report
+════════════════════════════════════════════════════════════════════════════════
