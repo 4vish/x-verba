@@ -315,9 +315,16 @@ decision_001:
 ```
 
 ### 4. Verify (CI/CD)
+First, save a baseline once you're happy with the current state:
 ```bash
-x-verba qa . --schema .verba/governance.yaml --strict
+x-verba scan . --save-baseline
 ```
+Then, on every subsequent commit, check for regressions against it:
+```bash
+x-verba qa . --schema .verba/governance-baseline.json
+```
+(`--fail-on-critical` is on by default, so the build already fails on critical
+regressions without needing an extra flag.)
 
 Fails your build if:
 - New ungoverned decision points are introduced
@@ -328,7 +335,7 @@ Fails your build if:
 **GitHub Actions:**
 ```yaml
 - name: Governance regression check
-  run: x-verba qa . --schema .verba/governance.yaml --strict
+  run: x-verba qa . --schema .verba/governance-baseline.json
 ```
 
 ---
