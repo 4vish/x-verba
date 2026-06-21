@@ -602,18 +602,18 @@ x-verba scan ./my-repo --focus src/critical/
 Governance regression testing for CI/CD.
 
 ```bash
-x-verba qa . --schema .verba/governance.yaml --strict
+x-verba qa . --schema .verba/governance-baseline.json
 ```
 
 Fails if Gamma drops or new gaps appear.
 
-### `x-verba forensics` (Coming v0.5)
+### `x-verba forensics` (Not yet implemented)
 Reverse-engineer failures using the DC taxonomy.
 
-### `x-verba prompt` (Coming v0.6)
+### `x-verba prompt` (Not yet implemented)
 Generate governance-informed prompts for AI coding tools.
 
-### `x-verba compile` (Coming v0.4)
+### `x-verba compile` (Not yet implemented)
 Compile governance spec into executable bundle.
 
 ---
@@ -673,7 +673,7 @@ Not because these are poorly built. Because **governance at the code level is no
 2. **Read one finding.** Open the YAML. Pick the highest-severity issue.
 3. **Decide your policy.** "What must be true before this decision happens?"
 4. **Implement.** Add the governance mechanism (validation, approval, audit trail).
-5. **Verify.** Run `x-verba qa --strict` in your CI/CD pipeline.
+5. **Verify.** Run `x-verba qa . --schema .verba/governance-baseline.json` in your CI/CD pipeline.
 6. **Track progress.** Watch Gamma increase over time as you add governance.
 
 ---
