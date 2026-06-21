@@ -610,8 +610,10 @@ Compile governance spec into executable bundle.
 ## Language Support
 
 - ✅ **Python** — Full AST-based decision point analysis
-- ✅ **JavaScript/TypeScript** — Full pattern-based analysis
-- 🔄 **Java, Go, Ruby, C#** — Partial support (AI calls detected, decision analysis in progress)
+- ✅ **JavaScript/TypeScript (incl. JSX/TSX)** — Full pattern-based analysis
+- ✅ **Go, Rust, C#** — Full pattern-based decision point and AI-call analysis
+- ⚠️ **Java, Ruby, PHP** — Files are scanned and counted, but get no decision-point
+  or AI-call analysis — they contribute nothing to Gamma, coverage, or findings
 
 ---
 
@@ -629,7 +631,7 @@ Compile governance spec into executable bundle.
 
 1. **Structural Analysis Only** — X-Verba reads code. It cannot detect runtime behavior, social engineering, or human error.
 
-2. **Language Coverage** — Some dynamic languages (Ruby, PHP) may miss custom wrappers. Python and TypeScript have highest confidence.
+2. **Language Coverage** — Java, Ruby, and PHP files are scanned but get no decision-point or AI-call detection at all, not just reduced confidence on custom wrappers. A repo mostly in one of these languages will show near-zero findings regardless of its actual governance posture — check the scan's language coverage warning before trusting a low Gamma score on such a repo. Python (AST-based) has the highest detection confidence; JavaScript/TypeScript, Go, Rust, and C# (all pattern-based) are next.
 
 3. **False Positives** — X-Verba is deliberately sensitive. You may see governance recommendations for low-risk code. Filter by severity.
 
