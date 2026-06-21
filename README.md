@@ -4,6 +4,10 @@
 
 X-Verba scans your codebase for **governance gaps** — places where your system commits to something irreversible (AI calls, payments, database writes, deployments, agent handovers) without adequate checks, validation, approval gates, or audit trails.
 
+**Language support:**
+- ✅ **Full analysis** (decision points, AI-call detection, Gamma, all findings): **Python, JavaScript/TypeScript (incl. JSX/TSX), Go, Rust, C#**
+- ⚠️ **Files counted, not analyzed** (contribute nothing to Gamma or findings): **Java, Ruby, PHP** — see [Language Support](#language-support) for what this means before trusting a scan on these codebases.
+
 ---
 
 ## What It Does (In 30 Seconds)
