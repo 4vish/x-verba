@@ -116,6 +116,14 @@ AI_CALL_METHODS = [
     "invoke_model(", "invoke_model_with_response_stream(",
 ]
 
+# Method names generic enough to appear on non-AI objects (a DB client's
+# .query(), an HTTP client's .complete()) — only count as an AI call if the
+# call's root object is also a recognised AI import. See _identify_provider().
+_GENERIC_AI_CALL_METHODS = {
+    ".generate(", ".complete(", ".predict(",
+    ".chat(", ".ask(", ".query(", "pipeline(",
+}
+
 IRREVERSIBLE_ACTION_PATTERNS = {
     "email_send": [
         "send_mail", "send_message", "smtp.sendmail", "ses.send_email",
@@ -463,6 +471,16 @@ class ASTAnalyser:
 
         for method in AI_CALL_METHODS:
             if method.rstrip("(") in call_str:
+                # Generic method names (.chat(, .query(, .predict(, pipeline(, ...)
+                # appear on plenty of non-AI objects (a DB client's .query(), an
+                # HTTP client's .complete(), a Workflow's pipeline()). Without a
+                # recognised AI import as the call's root, matching one of these
+                # alone isn't real evidence of an AI call — skip rather than
+                # guess "ai_framework". The more specific method names below
+                # (chat.completions.create, LLMChain, ChatOpenAI, etc.) are
+                # distinctive enough to stand on their own.
+                if method in _GENERIC_AI_CALL_METHODS and root not in self.ai_imports:
+                    continue
                 if any(x in call_lower for x in ["openai", "chatcompletion", "completion"]):
                     return "openai"
                 if any(x in call_lower for x in ["anthropic", "claude"]):
@@ -658,6 +676,28 @@ def _compute_language_coverage(parsed: list) -> dict:
 
 # ── Decision-point detection (Pass 1 enhancement) ─────────────────────────────
 
+# A handler body line matching this is a logging call and nothing else —
+# logging an exception is not recovery: it doesn't halt execution, re-raise,
+# return a failure sentinel, or escalate. Execution proceeds as if nothing
+# happened either way, so a handler whose only content is logging calls is
+# still a Terminal State, not a governed recovery path.
+_LOGGING_ONLY_RE = re.compile(
+    r'^(logger\.|logging\.|log\.|console\.|print\()',
+    re.IGNORECASE,
+)
+
+
+def _is_genuine_recovery(body_lines: list) -> bool:
+    """True only if at least one non-empty handler line does something
+    beyond logging (re-raise, return a failure value, compensating call,
+    retry, escalation, etc.). A handler whose only non-empty lines are
+    logging calls returns False — it swallows the error and continues."""
+    non_empty = [bl for bl in body_lines if bl and bl not in ("pass", "...")]
+    if not non_empty:
+        return False
+    return not all(_LOGGING_ONLY_RE.match(bl.strip()) for bl in non_empty)
+
+
 class DecisionPointAnalyser:
     """
     AST-based detection of ALL decision points in Python source —
@@ -731,7 +771,7 @@ class DecisionPointAnalyser:
                 self._line_text(lines, getattr(stmt, "lineno", 0)).lower()
                 for stmt in handler.body
             ]
-            if any(bl not in ("pass", "...", "") for bl in body_lines):
+            if _is_genuine_recovery(body_lines):
                 has_recovery = True
 
         return {
@@ -949,10 +989,11 @@ class PatternDecisionPointAnalyser:
         body_lines = [
             bl.strip() for bl in block[1:-1]
         ] if len(block) > 1 else []
-        has_recovery = any(
-            bl and not bl.startswith(("//", "*", "/*")) and bl not in ("{", "}")
-            for bl in body_lines
-        )
+        non_comment_lines = [
+            bl for bl in body_lines
+            if bl and not bl.startswith(("//", "*", "/*")) and bl not in ("{", "}")
+        ]
+        has_recovery = _is_genuine_recovery(non_comment_lines)
 
         return {
             "type": "try_except",
@@ -989,18 +1030,19 @@ class PatternDecisionPointAnalyser:
         """
         Go-style `if err != nil { ... }` guard. Treated as the try/except
         equivalent: has_recovery is False if the block only propagates the
-        error (`return ...err`) or panics, True if it does anything else
-        (logging, retries, fallback values, etc.).
+        error (`return ...err`), panics, or only logs — True if it does a
+        genuine recovery action (retry, fallback value, compensating call).
         """
         _, block = self._block_extent(lines, line_num - 1)
         body_lines = [
             bl.strip() for bl in block[1:-1]
         ] if len(block) > 1 else []
-        has_recovery = any(
-            bl and not bl.startswith(self.COMMENT_PREFIXES)
+        non_propagation_lines = [
+            bl for bl in body_lines
+            if bl and not bl.startswith(self.COMMENT_PREFIXES)
             and not re.match(r'^(return\b.*\berr\w*\b|panic\()', bl)
-            for bl in body_lines
-        )
+        ]
+        has_recovery = _is_genuine_recovery(non_propagation_lines)
         return {
             "type": "try_except",
             "location": f"{filepath}:{line_num}",
@@ -1330,7 +1372,7 @@ class AgentHandoverAnalyser:
 
     def _build_handover(self, source_info: dict, to_agent: str, data_var: str, line_num: int, lines: list, filepath: str) -> dict:
         pre_node = _assess_pre_node_strength(lines, line_num)
-        pre_node_exists = pre_node is not None and pre_node["strength"] >= 0.5
+        pre_node_exists = pre_node is not None and pre_node["strength"] >= GOVERNANCE_STRENGTH_THRESHOLD
 
         return {
             "from_agent": source_info["agent"],
@@ -1603,9 +1645,6 @@ def _update_legion_confidence(legion: Legion, new_evidence: List[EvidenceNode]) 
 
 # ── Pass 6.5 — per-gap drift exposure enrichment ─────────────────────────────
 
-_CONF_RANK = {"HIGH": 3, "MEDIUM": 2, "SPECULATIVE": 1}
-
-
 def _flat_dc_entries(dc_classes_complete: dict) -> dict:
     """Return a flat {dc_code: entry} dict from the nested drift_classes structure."""
     flat: dict = {}
@@ -1719,13 +1758,23 @@ def _enrich_gaps_with_drift_exposure(
     dc_entries: dict,
     so_entries: dict,
 ) -> None:
-    """Pass 6.5 — attach drift_exposure to each gap dict.
+    """Pass 6.5 — attach drift_exposure to each gap dict, only when there is
+    real structural evidence for the specific Drift Class involved.
 
     Matching strategy (per gap):
-      1. Same-file HIGH/MEDIUM match — most specific
-      2. Any HIGH/MEDIUM match in the scan — cross-file but confirmed
-      3. Best SPECULATIVE match as last resort
-    Mutates gap dicts in place. Gracefully skips if data is missing.
+      1. Same-file HIGH/MEDIUM match — the only signal that actually says
+         something about *this* gap, not just "a confirmed Legion exists
+         somewhere in the scan."
+
+    Previously this fell back to "any HIGH/MEDIUM match anywhere in the
+    scan" or "the best SPECULATIVE match" when no same-file match existed —
+    that produced DC labels with no real connection to the gap they were
+    attached to (e.g. an unrelated file's confirmed match getting borrowed
+    for a gap that has nothing to do with it). Most gaps are generic
+    Pre-Node gaps that don't exhibit any specific Drift Class mechanism —
+    leaving drift_exposure unset for those is the correct, honest result,
+    not a regression. Mutates gap dicts in place. Gracefully skips if data
+    is missing.
     """
     if not legion_matches or not dc_entries:
         return
@@ -1733,21 +1782,12 @@ def _enrich_gaps_with_drift_exposure(
     def _file_of(loc: str) -> str:
         return loc.split(":")[0] if ":" in loc else loc
 
-    sorted_matches = sorted(
-        legion_matches,
-        key=lambda m: _CONF_RANK.get(m.get("confidence", "SPECULATIVE"), 0),
-        reverse=True,
-    )
-    high_med = [m for m in sorted_matches if m.get("confidence") in ("HIGH", "MEDIUM")]
+    high_med = [m for m in legion_matches if m.get("confidence") in ("HIGH", "MEDIUM")]
 
     for gap in gaps:
         gap_file = _file_of(gap.get("location", ""))
 
-        match = (
-            next((m for m in high_med if _file_of(m.get("location", "")) == gap_file), None)
-            or next(iter(high_med), None)
-            or next(iter(sorted_matches), None)
-        )
+        match = next((m for m in high_med if _file_of(m.get("location", "")) == gap_file), None)
         if not match:
             continue
 
@@ -2427,6 +2467,57 @@ def _has_human_review(lines: list, line_num: int) -> bool:
     )
 
 
+# subprocess.run/subprocess.call cover both genuinely destructive operations
+# (rm -rf, git push, a deploy) and harmless, idempotent ones (git fetch,
+# pytest, a build step) — only the former should be treated as irreversible.
+# os.system and subprocess.Popen are always flagged regardless of content
+# (os.system is shell-injection-prone by construction; Popen is fire-and-forget).
+_IRREVERSIBLE_SUBPROCESS_COMMANDS = (
+    "rm ", "rmdir", "git push", "git commit", "deploy",
+    "kubectl", "docker push", "pip install", "npm publish",
+)
+
+
+def _is_irreversible_subprocess_command(line: str) -> bool:
+    # subprocess.run(["rm", "-rf", path]) is the idiomatic (and recommended
+    # over shell=True) way to call this — quotes/commas/brackets sit between
+    # the command and its arguments, so a literal substring check like
+    # "rm " never matches list-style calls, only "rm -rf ..." shell strings.
+    # Normalize both styles to plain space-separated words before matching.
+    normalized = re.sub(r'["\',\[\]]', ' ', line.lower())
+    normalized = re.sub(r'\s+', ' ', normalized)
+    return any(cmd in normalized for cmd in _IRREVERSIBLE_SUBPROCESS_COMMANDS)
+
+
+# Keywords distinguishing a dormant/conditional trigger (a stale feature flag
+# or legacy switch that re-activates code after deployment — the Knight
+# Capital signature: DC-E14 Substrate Contamination) from an ordinary runtime
+# condition. Most ungated irreversible actions have neither kind of guard —
+# they're just unconditional calls — which is a generic Pre-Node gap, not
+# evidence of this specific drift mechanism.
+_DORMANT_TRIGGER_KEYWORDS = (
+    "enabled", "flag", "legacy", "deprecated", "feature_flag",
+    "toggle", "rollout", "config.", "is_active",
+)
+
+
+def _find_dormant_trigger_guard(lines: list, line_num: int, window: int = 15) -> Optional[str]:
+    """Look back from line_num for a conditional whose own condition text
+    reads like a stale feature flag / legacy switch, not a normal runtime
+    check. Returns the condition text if found, else None."""
+    if not lines or line_num <= 1:
+        return None
+    start = max(0, line_num - window)
+    for i in range(line_num - 2, start - 1, -1):
+        stripped = lines[i].strip()
+        if not _is_conditional(stripped):
+            continue
+        stripped_lower = stripped.lower()
+        if any(kw in stripped_lower for kw in _DORMANT_TRIGGER_KEYWORDS):
+            return stripped[:160]
+    return None
+
+
 def _detect_irreversible_actions(lines: list, filepath: str) -> list:
     """
     Detect irreversible actions with no authorisation gate.
@@ -2437,6 +2528,7 @@ def _detect_irreversible_actions(lines: list, filepath: str) -> list:
 
     for action_type, patterns in IRREVERSIBLE_ACTION_PATTERNS.items():
         for pattern in patterns:
+            content_aware = pattern in ("subprocess.run", "subprocess.call")
             for i, line in enumerate(lines, 1):
                 stripped = line.strip()
                 if stripped.startswith("#") or stripped.startswith("//"):
@@ -2445,6 +2537,11 @@ def _detect_irreversible_actions(lines: list, filepath: str) -> list:
                     continue
 
                 if re.search(pattern, line, re.IGNORECASE):
+                    if content_aware and not _is_irreversible_subprocess_command(line):
+                        # Reversible command (git fetch, pytest, ...) — keep
+                        # scanning the rest of the file for a genuinely
+                        # destructive call instead of stopping here.
+                        continue
                     has_gate = _has_authorisation_gate(lines, i)
                     if not has_gate:
                         findings.append({
@@ -2453,6 +2550,7 @@ def _detect_irreversible_actions(lines: list, filepath: str) -> list:
                             "pattern": pattern,
                             "line_content": stripped[:120],
                             "filepath": filepath,
+                            "dormant_trigger_guard": _find_dormant_trigger_guard(lines, i),
                         })
                     break  # one finding per pattern per file
 
@@ -2564,7 +2662,7 @@ class ScanEngine:
             "scan_date": datetime.now(timezone.utc).isoformat(),
             "repo": str(path),
             "identity_key": identity_key,
-            "verba_version": "0.4.2",
+            "verba_version": "0.4.3",
             "context_profile": self.context_profile,
             "reviewed": False,
             "focus_paths": focus_paths or [],
@@ -2863,6 +2961,13 @@ class ScanEngine:
 
             is_ai_file = file_data["has_ai"]
             is_adjacent = self._is_ai_adjacent_file(file_data, ai_file_paths)
+            # Same scoping rule as irreversible-action detection below: a try/except
+            # with no recovery is only a governance-relevant Terminal State if it's
+            # in AI-adjacent code. The same pattern in an unrelated utility file is
+            # not something this tool is positioned to judge.
+            should_scan_terminal_states = (
+                self.profile["flag_irrev_outside_ai"] or is_adjacent
+            )
 
             # R3: classify this file so DC findings can be scoped correctly
             file_context = _classify_file_context(str(rel_path), content)
@@ -2908,9 +3013,10 @@ class ScanEngine:
                     )
 
                     # Pass 5 — terminal states (unhandled exceptions, no recovery)
-                    primitives["terminal_states"].extend(
-                        _detect_terminal_states(decision_points)
-                    )
+                    if should_scan_terminal_states:
+                        primitives["terminal_states"].extend(
+                            _detect_terminal_states(decision_points)
+                        )
                 except Exception as e:
                     if self.verbose:
                         console.print(f"[dim]Decision point scan error in {rel_path}: {e}[/dim]")
@@ -2980,9 +3086,10 @@ class ScanEngine:
                     )
 
                     # Pass 5 — terminal states (unhandled exceptions, no recovery)
-                    primitives["terminal_states"].extend(
-                        _detect_terminal_states(pattern_decision_points)
-                    )
+                    if should_scan_terminal_states:
+                        primitives["terminal_states"].extend(
+                            _detect_terminal_states(pattern_decision_points)
+                        )
                 except Exception as e:
                     if self.verbose:
                         console.print(f"[dim]{label} decision point scan error in {rel_path}: {e}[/dim]")
@@ -3076,27 +3183,28 @@ class ScanEngine:
             # by design; governance is the responsibility of the application layer above.
             is_framework = ai.get("file_context") == "framework"
 
+            # Unsanitised external input reaching an AI prompt is uncontrolled
+            # signal injection (DC-E3, "information-level contamination") — not
+            # DC-E5 (Dominance Forcing), which is specifically about coercive
+            # rhetorical/grammatical structure, a different phenomenon entirely.
             if not is_framework and ai.get("user_input_in_prompt") and not ai.get("pre_node_detected"):
-                key = f"DC-E5:{loc}"
+                key = f"DC-E3:{loc}"
                 if key not in seen_locations:
                     seen_locations.add(key)
                     findings.append(self._build_finding(
-                        "DC-E5", dc_classes.get("DC-E5", {}), loc,
-                        "E5-L2", ai["id"],
+                        "DC-E3", dc_classes.get("DC-E3", {}), loc,
+                        "E3-L1", ai["id"],
                         "User input flows into AI prompt with no sanitisation checkpoint",
                         "critical",
                     ))
 
-            if not is_framework and ai.get("dynamic_prompt") and not ai.get("pre_node_detected"):
-                key = f"DC-L2:{loc}"
-                if key not in seen_locations:
-                    seen_locations.add(key)
-                    findings.append(self._build_finding(
-                        "DC-L2", dc_classes.get("DC-L2", {}), loc,
-                        "L2-L1", ai["id"],
-                        "Dynamic prompt assembled from external input with no boundary check",
-                        "high",
-                    ))
+            # "Dynamic prompt assembly" alone isn't evidence of any specific
+            # drift mechanism — it's a structural precondition shared by several
+            # different DCs, not a signature of one. DC-L2 (Performative Capture)
+            # specifically means outputs that *enact* change (the DAN jailbreak
+            # pattern), which this pattern doesn't establish. Left unlabelled
+            # rather than guessed — the underlying gap is still tracked separately
+            # via _analyse_gaps regardless of whether it carries a DC code.
 
             temp = ai.get("temperature")
             if temp is not None and isinstance(temp, (int, float)) and temp > 0.7:
@@ -3106,8 +3214,10 @@ class ScanEngine:
                     findings.append(self._build_finding(
                         "DC-I6", dc_classes.get("DC-I6", {}), loc,
                         "I6-L1", ai["id"],
-                        f"High temperature ({temp}) — structural cascade rupture risk",
+                        f"High temperature ({temp}) — a precondition consistent with cascade "
+                        f"rupture risk, not direct evidence it is occurring",
                         "high",
+                        confidence="SPECULATIVE",
                     ))
 
             # R1: collect DC-I11 instances rather than emitting one per call site
@@ -3146,7 +3256,15 @@ class ScanEngine:
                     "critical",
                 ))
 
+        # DC-E14 (Substrate Contamination) is specifically about drift "activating
+        # under specific trigger conditions after deployment" — the Knight Capital
+        # signature. An ungated irreversible action with no such trigger is just a
+        # generic Pre-Node gap (already captured by _analyse_gaps), not evidence of
+        # this drift mechanism — only label it DC-E14 when a dormant/legacy-flag
+        # guard is actually present.
         for action in primitives.get("irreversible_actions", []):
+            if not action.get("dormant_trigger_guard"):
+                continue
             loc = f"{action['filepath']}:{action['line']}"
             key = f"DC-E14:{loc}"
             if key not in seen_locations:
@@ -3155,7 +3273,9 @@ class ScanEngine:
                 findings.append(self._build_finding(
                     "DC-E14", dc, loc,
                     "E14-L1", "irreversible",
-                    f"Irreversible action ({action['action_type']}) with no authorisation gate — Knight Capital failure mode",
+                    f"Irreversible action ({action['action_type']}) gated only by a stale-looking "
+                    f"condition ('{action['dormant_trigger_guard']}') with no authorisation check "
+                    f"— Knight Capital failure mode",
                     "critical",
                 ))
 
@@ -3168,7 +3288,7 @@ class ScanEngine:
                 return tier_group[dc_code]
         return {}
 
-    def _build_finding(self, dc_code, dc, location, legion_code, triggered_by, evidence, severity):
+    def _build_finding(self, dc_code, dc, location, legion_code, triggered_by, evidence, severity, confidence="HIGH"):
         legions = dc.get("legions", {})
         legion = legions.get(legion_code, {})
         complete = self._dc_meta_complete(dc_code)
@@ -3184,6 +3304,11 @@ class ScanEngine:
             "tier": dc.get("tier") or complete.get("tier", ""),
             "location": location,
             "severity": severity,
+            # How confident this DC label is — distinct from severity (how bad
+            # IF true). HIGH = direct structural evidence; MEDIUM = plausible but
+            # incomplete evidence; SPECULATIVE = a precondition consistent with
+            # this DC, not a signature of it actually occurring.
+            "confidence": confidence,
             "triggered_by": triggered_by,
             "evidence": evidence,
             "plain_english": dc.get("plain_english") or complete.get("operational_definition", ""),
@@ -3229,6 +3354,10 @@ class ScanEngine:
             "tier": dc.get("tier") or complete.get("tier", ""),
             "location": f"scan-level aggregate ({count} instances)",
             "severity": "informational",
+            # Missing human review is a generic Pre-Node gap; it's only genuine
+            # Evaluative Decoupling if there's also a metrics/objective-mismatch
+            # signal, which isn't checked here — MEDIUM, not HIGH, confidence.
+            "confidence": "MEDIUM",
             "aggregate": True,
             "aggregate_count": count,
             "aggregate_locations": locations,
@@ -3407,7 +3536,7 @@ class ScanEngine:
         function calls), not just AI integrations and irreversible actions.
         """
         gaps = []
-        strength_threshold = 0.5
+        strength_threshold = GOVERNANCE_STRENGTH_THRESHOLD
         consequence_by_loc = {
             c["decision_location"]: c for c in primitives.get("consequences", [])
         }
@@ -3710,13 +3839,26 @@ class ScanEngine:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
+    # Template signal must co-occur with a prompt-related keyword on the SAME
+    # line — checking a wide multi-line block for either signal independently
+    # (the old behaviour) flagged unrelated code, e.g. a list comprehension
+    # using the variable name "query" 15 lines away from an unrelated f-string.
+    _DYNAMIC_PROMPT_KEYWORDS = ("prompt", "messages", "content", "system", "user")
+    _DYNAMIC_PROMPT_TEMPLATE_SIGNALS = ('f"', "f'", ".format(", "{query}", "{input}", "{task}", "{context}")
+
     def _has_dynamic_prompt(self, content: str, line_num: int) -> bool:
         lines = content.splitlines()
-        context = "\n".join(lines[max(0, line_num - 20):line_num + 5])
-        return any(s in context for s in [
-            'f"', "f'", ".format(", "% (", "+ prompt",
-            "system_prompt =", "user_message =", "{query}", "{input}",
-        ])
+        # Narrower window than the surrounding context checks (30 lines) — a
+        # prompt is assembled close to where it's used, not anywhere in the
+        # enclosing function.
+        context_lines = lines[max(0, line_num - 10):line_num + 3]
+        for line in context_lines:
+            line_lower = line.lower()
+            has_keyword = any(kw in line_lower for kw in self._DYNAMIC_PROMPT_KEYWORDS)
+            has_template = any(s in line for s in self._DYNAMIC_PROMPT_TEMPLATE_SIGNALS)
+            if has_keyword and has_template:
+                return True
+        return False
 
     def _has_user_input_in_prompt(self, content: str, line_num: int) -> bool:
         lines = content.splitlines()
@@ -4067,7 +4209,7 @@ class ConsequenceEnricher:
                 reversible="true" if c.get("reversible") else "false",
                 blast_radius=estimate_blast_radius(detailed_type),
                 business_impact=estimate_business_impact(detailed_type),
-                governed=strength >= 0.5,
+                governed=strength >= GOVERNANCE_STRENGTH_THRESHOLD,
                 governance_type=pre_node.get("type"),
                 governance_strength=strength,
                 drift_class=None,
@@ -4229,7 +4371,7 @@ class DecisionGraphBuilder:
                 decision_type=dp["type"],
                 condition=dp.get("condition") or dp.get("call", ""),
                 pre_node_strength=strength,
-                governed=strength >= 0.5,
+                governed=strength >= GOVERNANCE_STRENGTH_THRESHOLD,
             )
 
         edges: List[DecisionEdge] = []
@@ -4357,7 +4499,12 @@ class InventoryBuilder:
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Decision is "governed" if its strongest Pre-Node has strength >= this value.
-GOVERNANCE_STRENGTH_THRESHOLD = 0.5
+# 0.5 let a guard with no hard block (no raise/return — pure scope overlap
+# plus matching variable names) count as governed: 0.4 base + 0.2 soft
+# enforcement (+0.2 causality) reached 0.6-0.8 with nothing that actually
+# stops execution on failure. 0.7 requires real enforcement (a hard block,
+# or the 0.7 dependency-injection signal) to count.
+GOVERNANCE_STRENGTH_THRESHOLD = 0.7
 
 # A decision/consequence is "critical" if its criticality score is >= this value.
 CRITICALITY_THRESHOLD = 0.8
@@ -4397,7 +4544,14 @@ class GovernanceMetricsBuilder:
 
         Reference: Regeneration Handover, Part 5.
         """
-        decision_points = primitives.get("decision_points", [])
+        # Same consequential-only filter as GammaVariantsBuilder.compute() — a
+        # decision point only belongs in the coverage surface if it leads to a
+        # consequence. Otherwise null checks and simple loops dilute the figure.
+        consequence_locs = {c["decision_location"] for c in primitives.get("consequences", [])}
+        decision_points = [
+            dp for dp in primitives.get("decision_points", [])
+            if dp["location"] in consequence_locs
+        ]
         overall_percent = self._percent_governed(decision_points)
 
         by_decision_type: Dict[str, float] = {}
@@ -4408,7 +4562,11 @@ class GovernanceMetricsBuilder:
 
         by_consequence_type = self._consequence_type_coverage(primitives, decision_graph)
 
-        critical_nodes = [n for n in decision_graph.nodes.values() if n.criticality >= CRITICALITY_THRESHOLD]
+        consequential_node_ids = {edge.from_node for edge in decision_graph.edges}
+        critical_nodes = [
+            n for n_id, n in decision_graph.nodes.items()
+            if n_id in consequential_node_ids and n.criticality >= CRITICALITY_THRESHOLD
+        ]
         critical_governed = sum(1 for n in critical_nodes if n.governed)
         critical_coverage = _safe_ratio(critical_governed, len(critical_nodes)) * 100
 
@@ -4547,7 +4705,17 @@ class GammaVariantsBuilder:
     """Pass 15 — compute Structural Gamma across decision-type, consequence-type, criticality, and agent dimensions."""
 
     def compute(self, primitives: dict, decision_graph: DecisionGraph, agent_graph: AgentGraph) -> GammaVariants:
-        nodes = list(decision_graph.nodes.values())
+        # Only count decision points that lead to a consequential action —
+        # decision_graph.nodes contains every decision point detected (including
+        # null checks, simple loops, ternaries with no downstream consequence),
+        # but a decision point only belongs in the governance surface if there's
+        # something to govern. This matches the filter _compute_gamma() already
+        # applies for the legacy proxy value.
+        consequential_node_ids = {edge.from_node for edge in decision_graph.edges}
+        nodes = [
+            n for n_id, n in decision_graph.nodes.items()
+            if n_id in consequential_node_ids
+        ]
 
         overall = self._gamma(sum(1 for n in nodes if n.governed), len(nodes))
 
@@ -4600,7 +4768,12 @@ class GammaVariantsBuilder:
     @staticmethod
     def _gamma(governed: int, total: int) -> GammaValue:
         value = _safe_ratio(governed, total)
-        return GammaValue(value=value, status=_gamma_status(value), governed=governed, total=total)
+        # Status is computed from the precise ratio (so a value right at a
+        # threshold boundary isn't misclassified by display rounding), but the
+        # stored/displayed value itself is rounded to 2dp — every consumer
+        # (terminal, JSON, YAML) reads this same field, so rounding once here
+        # is sufficient everywhere.
+        return GammaValue(value=round(value, 2), status=_gamma_status(value), governed=governed, total=total)
 
     def _cluster_gamma(self, agent_graph: AgentGraph) -> GammaValue:
         """
@@ -5010,26 +5183,32 @@ class ReportBuilder:
 
     # Behavioural domain groupings for Drift Class codes
     _DC_DOMAIN: Dict[str, str] = {
-        "DC-E5":  "File System",
-        "DC-L2":  "File System",
-        "DC-S3":  "Config / State",
-        "DC-E14": "External APIs",
+        "DC-E3":  "AI",
+        "DC-E5":  "AI",
+        "DC-L2":  "AI",
+        "DC-S3":  "Multi-Agent / Cluster",
+        "DC-E14": "Infrastructure",
         "DC-I11": "AI",
         "DC-I6":  "AI",
-        "DC-E13": "State Mutation",
-        "DC-S7":  "Config / State",
+        "DC-E13": "AI",
+        "DC-S7":  "Multi-Agent / Cluster",
     }
 
-    # Fallback human-readable names when dc_name field is empty
+    # Fallback human-readable names when dc_name field is empty. Names below
+    # are the canonical ones from dc_classes_complete.json — verified against
+    # the real operational definitions; do not "improve" these without
+    # checking the data file first, since prior versions of this dict drifted
+    # from the canonical names without anyone noticing for some time.
     _DC_NAME_FALLBACK: Dict[str, str] = {
-        "DC-E5":  "Unlogged Consequence",
+        "DC-E3":  "Signal Corruption",
+        "DC-E5":  "Dominance Forcing",
         "DC-E13": "Propagating Corruption",
-        "DC-E14": "Unsanctioned Dependency",
-        "DC-I6":  "Feedback Opacity",
+        "DC-E14": "Substrate Contamination",
+        "DC-I6":  "Cascade Rupture",
         "DC-I11": "Evaluative Decoupling",
-        "DC-L2":  "Lifecycle Blind Spot",
-        "DC-S3":  "Silent Authority Expansion",
-        "DC-S7":  "Ungoverned Termination",
+        "DC-L2":  "Performative Capture",
+        "DC-S3":  "Emergent Misalignment",
+        "DC-S7":  "Symbiotic Corruption",
     }
 
     def drift_class_detections(self, dc_findings: list, legion_matches: list) -> str:
@@ -5040,7 +5219,8 @@ class ReportBuilder:
         dc_names: Dict[str, str] = {}
         for f in dc_findings:
             code = f["dc_code"]
-            by_code.setdefault(code, {})["STRUCTURAL"] = by_code.setdefault(code, {}).get("STRUCTURAL", 0) + 1
+            confidence = f.get("confidence", "HIGH")
+            by_code.setdefault(code, {})[confidence] = by_code.setdefault(code, {}).get(confidence, 0) + 1
             if not dc_names.get(code):
                 dc_names[code] = f.get("dc_name") or self._DC_NAME_FALLBACK.get(code, "")
         for m in legion_matches:

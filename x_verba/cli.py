@@ -36,7 +36,7 @@ BANNER = """
 
 
 @click.group()
-@click.version_option(version="0.4.2", prog_name="x-verba")
+@click.version_option(version="0.4.3", prog_name="x-verba")
 def main():
     """
     X-Verba — Find the governance gaps in your AI code before your users do.
@@ -352,7 +352,7 @@ def qa(path, schema, output_format, fail_on_critical):
 )
 def forensics(path, identity_key, output_format):
     """
-    [coming v0.2] Reverse engineer governance failures — DC decomposition.
+    [Not yet implemented] Reverse engineer governance failures — DC decomposition.
 
     Examples:
 
@@ -360,7 +360,7 @@ def forensics(path, identity_key, output_format):
       x-verba forensics ./legacy-repo
       x-verba forensics ./repo --identity-key my-system-v1.0
     """
-    from forensics_engine import ForensicsEngine
+    from .forensics_engine import ForensicsEngine
     from .writer import OutputWriter
 
     console.print()
@@ -418,7 +418,7 @@ def forensics(path, identity_key, output_format):
 )
 def prompt(description, from_repo, domain, output_format, output):
     """
-    [coming v0.2] Generate a governance-informed prompt for AI coding tools.
+    [Not yet implemented] Generate a governance-informed prompt for AI coding tools.
 
     Examples:
 
@@ -426,7 +426,7 @@ def prompt(description, from_repo, domain, output_format, output):
       x-verba prompt -d "patient triage API using GPT-4" --domain healthcare
       x-verba prompt --from-repo ./partial-codebase --domain finance
     """
-    from prompt_engine import PromptEngine
+    from .prompt_engine import PromptEngine
 
     console.print()
     console.print(Panel(
@@ -464,7 +464,7 @@ def prompt(description, from_repo, domain, output_format, output):
 )
 def compile(schema, output, validate_only):
     """
-    [coming v0.2] Compile an approved governance schema into an executable bundle.
+    [Not yet implemented] Compile an approved governance schema into an executable bundle.
 
     Examples:
 
@@ -472,7 +472,7 @@ def compile(schema, output, validate_only):
       x-verba compile .verba/governance.yaml
       x-verba compile .verba/governance.yaml --validate-only
     """
-    from compile_engine import CompileEngine
+    from .compile_engine import CompileEngine
 
     console.print()
     console.print(Panel(
@@ -486,9 +486,13 @@ def compile(schema, output, validate_only):
 
     if validate_only:
         results = engine.validate(schema)
+        if results.get("status") == "not_implemented":
+            return
         _print_validation_summary(results)
     else:
         results = engine.compile(schema, output)
+        if results.get("status") == "not_implemented":
+            return
         _print_compile_summary(results)
 
 
@@ -551,7 +555,7 @@ def _print_terminal_summary(results, output_path):
     console.print(f"[dim]Decision points:[/dim]        {decision_pts}")
     console.print(f"[dim]Context profile:[/dim]        {profile}")
     console.print(f"[dim]Language coverage:[/dim]      {lang_frac:.0%}")
-    gamma_str = f"{gamma_val:.4f}" if gamma_val is not None else "N/A"
+    gamma_str = f"{gamma_val:.2f}" if gamma_val is not None else "N/A"
     console.print(f"[dim]Structural Gamma:[/dim]       {gamma_str}  [dim]({gamma_status})[/dim]")
     if gamma_val is not None:
         gamma_pct = int(round(gamma_val * 100))
