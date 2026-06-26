@@ -1456,6 +1456,7 @@ class AgentHandoverAnalyser:
         handovers.extend(self._detect_decorator_tool_wrapping(tree, lines, filepath))
         handovers.extend(self._detect_named_registry(tree, lines, filepath))
         handovers.extend(self._detect_recursive_delegation(tree, source, lines, filepath))
+        handovers.extend(self._detect_remote_agent_calls(tree, lines, filepath))
         return handovers
 
     # ── Family 1: graph/builder edges ─────────────────────────────────────
@@ -1759,6 +1760,46 @@ class AgentHandoverAnalyser:
             handovers.append(self._build_handover(
                 {"agent": from_agent, "line": line_num}, "<delegated subagent>", "", line_num, lines, filepath,
             ))
+        return handovers
+
+    # ── Family 4: protocol/server (network handshake) ─────────────────────
+
+    def _detect_remote_agent_calls(self, tree: ast.AST, lines: list, filepath: str) -> list:
+        """A client object calling a remotely, independently-deployed
+        agent/workflow over a network boundary — distinct from every other
+        family, no in-process call chain. Two confirmed shapes:
+
+        - AP2's ``PaymentRemoteA2aClient(name="merchant_agent",
+          base_url="http://...", ...)`` — any ``*Client(...)`` constructor
+          carrying both a ``name=`` and a ``base_url=`` keyword.
+        - llama_deploy's ``WorkflowClient.run_workflow(workflow_name,
+          ...)`` — a ``.run_workflow(`` call, naming its target by string.
+        """
+        assigned_names = self._collect_assigned_names(tree)
+        handovers = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+
+            if isinstance(node.func, ast.Name) and node.func.id.endswith("Client"):
+                kw_values = {kw.arg: kw.value for kw in node.keywords}
+                if "name" in kw_values and "base_url" in kw_values:
+                    to_agent = self._literal_or_name(kw_values["name"])
+                    if to_agent:
+                        from_agent = assigned_names.get(id(node)) or node.func.id
+                        line_num = getattr(node, "lineno", 0)
+                        handovers.append(self._build_handover(
+                            {"agent": from_agent, "line": line_num}, to_agent, "", line_num, lines, filepath,
+                        ))
+
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "run_workflow" and node.args:
+                to_agent = self._literal_or_name(node.args[0])
+                if to_agent:
+                    from_agent = self._literal_or_name(node.func.value) or "Orchestrator"
+                    line_num = getattr(node, "lineno", 0)
+                    handovers.append(self._build_handover(
+                        {"agent": from_agent, "line": line_num}, to_agent, "", line_num, lines, filepath,
+                    ))
         return handovers
 
     def _scan_body(self, body: list, lines: list, filepath: str) -> list:

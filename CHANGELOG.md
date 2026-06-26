@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+Multi-agent handover detection — family 4 (protocol/server). The first
+family with no in-process call chain at all — a client object calling a
+remotely, independently-deployed agent/workflow over a network boundary.
+
+### Added
+
+- **AP2's `*Client(name=..., base_url=...)` shape** — any constructor
+  ending in `Client` carrying both a `name=` and a `base_url=` keyword.
+  Re-scan after fix, AP2's real `remote_agents.py`:
+  `credentials_provider_client` → `credentials_provider`,
+  `merchant_agent_client` → `merchant_agent`. Full-app re-scan: 0 → 12
+  agents / 9 handovers (family 2's `sub_agents=[...]` and family 4's
+  remote clients co-occurring in the same app, exactly as documented
+  during evidence-gathering).
+- **llama_deploy's `.run_workflow(workflow_name, ...)` shape** — a
+  bespoke REST protocol, not A2A, confirming this family is a genuine
+  architectural pattern independent of any specific wire protocol.
+
+No regressions — AI-integration counts unchanged across an 11-repo
+regression sweep.
+
+---
+
 Multi-agent handover detection — families 3 and 7 (recursive
 self-delegation, and named subagent registry). Grouped together since
 family 7 is family 3's static-declaration cousin: a predefined registry
