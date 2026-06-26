@@ -639,6 +639,23 @@ CSHARP_AI_PATTERNS = [
 ]
 
 
+def _js_balanced_brace_span(content: str, start_after_open_brace: int) -> str:
+    """Given an index just after an opening '{', return the substring up to
+    (not including) its matching closing '}', respecting nested braces.
+    Used where JS/TS pattern detection needs an object literal's exact
+    extent rather than a fixed character window."""
+    depth = 1
+    i = start_after_open_brace
+    n = len(content)
+    while i < n and depth > 0:
+        if content[i] == "{":
+            depth += 1
+        elif content[i] == "}":
+            depth -= 1
+        i += 1
+    return content[start_after_open_brace:i - 1]
+
+
 def _detect_ai_calls_pattern(
     content: str, lines: list, ai_patterns: list,
     temp_params: tuple = ("temperature",), token_params: tuple = ("maxTokens", "max_tokens", "MaxTokens"),
@@ -1368,6 +1385,24 @@ _JS_CREATE_AGENT_DECL_RE = re.compile(r'(?:const|let|var)\s+(\w+)\s*=\s*createAg
 _JS_TOOLS_LIST_RE = re.compile(r'tools\s*:\s*\[([^\]]*)\]')
 _JS_WRAP_WINDOW = 800
 
+# JS/TS family 7 (named subagent registry, open-agent-sdk-typescript):
+# ``const BUILTIN_AGENTS: Record<string, AgentDefinition> = { Explore: {...},
+# Plan: {...} }``. Uses proper brace-balance (_js_balanced_brace_span) rather
+# than a character window, since a fixed window risks spilling past the
+# object's closing brace into unrelated declarations.
+_JS_AGENT_RECORD_DECL_RE = re.compile(
+    r'(?:const|let|var)\s+(\w+)\s*:\s*Record<\s*string\s*,\s*AgentDefinition\s*>\s*=\s*\{'
+)
+_JS_RECORD_KEY_RE = re.compile(r'^\s{2,4}["\']?(\w+)["\']?\s*:\s*\{', re.MULTILINE)
+
+# Family 3 (recursive self-delegation, depth-capped runtime spawn): a tool
+# function — usually literally named one of these — recursively spawns a
+# child instance of the same agent. Requires a depth-cap signal elsewhere in
+# the file to corroborate; the depth cap, not the call itself, is this
+# family's structural signature (see .claude/skills/agent-handover-detection).
+_DELEGATION_TOOL_NAMES = {"delegate_task", "delegate_agent", "spawn_agent", "spawn_subagent"}
+_DEPTH_PARAM_RE = re.compile(r'\b(max_spawn_depth|spawn_depth|max_depth|child_depth)\b')
+
 # Constructor keyword arguments whose value is a list of agents — the
 # list-composition family (CrewAI's agents=, AutoGen's participants=,
 # Google ADK's sub_agents=, Semantic Kernel's members=) AND family 6's
@@ -1419,6 +1454,8 @@ class AgentHandoverAnalyser:
         handovers.extend(self._detect_handoff_appends(tree, lines, filepath))
         handovers.extend(self._detect_agent_as_tool(tree, lines, filepath))
         handovers.extend(self._detect_decorator_tool_wrapping(tree, lines, filepath))
+        handovers.extend(self._detect_named_registry(tree, lines, filepath))
+        handovers.extend(self._detect_recursive_delegation(tree, source, lines, filepath))
         return handovers
 
     # ── Family 1: graph/builder edges ─────────────────────────────────────
@@ -1652,6 +1689,78 @@ class AgentHandoverAnalyser:
                     ))
         return handovers
 
+    # ── Family 7: named subagent registry ─────────────────────────────────
+
+    def _detect_named_registry(self, tree: ast.AST, lines: list, filepath: str) -> list:
+        """Claude Agent SDK's shape — a dict keyed by name on a single
+        options object: ``ClaudeAgentOptions(agents={"code-reviewer":
+        AgentDefinition(...)})``. Distinct from family 2's same-named
+        ``agents=`` keyword by value type: family 2 requires a List,
+        this requires a Dict."""
+        assigned_names = self._collect_assigned_names(tree)
+        handovers = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for kw in node.keywords:
+                if kw.arg != "agents" or not isinstance(kw.value, ast.Dict):
+                    continue
+                orchestrator = (
+                    assigned_names.get(id(node))
+                    or self._get_call_string(node.func)
+                    or "Orchestrator"
+                )
+                line_num = getattr(node, "lineno", 0)
+                for key_node in kw.value.keys:
+                    if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
+                        handovers.append(self._build_handover(
+                            {"agent": orchestrator, "line": line_num}, key_node.value, "", line_num, lines, filepath,
+                        ))
+        return handovers
+
+    # ── Family 3: recursive self-delegation ───────────────────────────────
+
+    def _build_parent_map(self, tree: ast.AST) -> dict:
+        parents = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[child] = node
+        return parents
+
+    def _enclosing_def_name(self, node, parent_map: dict) -> Optional[str]:
+        current = parent_map.get(node)
+        while current is not None:
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                return current.name
+            current = parent_map.get(current)
+        return None
+
+    def _detect_recursive_delegation(self, tree: ast.AST, source: str, lines: list, filepath: str) -> list:
+        """Hermes/OpenClaw/Omnigent's shape — a tool function
+        (``delegate_task``/``spawn_agent``/...) recursively spawns a child
+        instance of the same agent, bounded by a depth-cap parameter. The
+        depth cap (``max_spawn_depth``/``MAX_DEPTH``/...) must be present
+        somewhere in the file to corroborate — the call name alone is too
+        easily an unrelated function of the same name."""
+        if not _DEPTH_PARAM_RE.search(source):
+            return []
+        parent_map = self._build_parent_map(tree)
+        handovers = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            call_str = self._get_call_string(node.func)
+            if not call_str:
+                continue
+            if call_str.split(".")[-1] not in _DELEGATION_TOOL_NAMES:
+                continue
+            from_agent = self._enclosing_def_name(node, parent_map) or "Orchestrator"
+            line_num = getattr(node, "lineno", 0)
+            handovers.append(self._build_handover(
+                {"agent": from_agent, "line": line_num}, "<delegated subagent>", "", line_num, lines, filepath,
+            ))
+        return handovers
+
     def _scan_body(self, body: list, lines: list, filepath: str) -> list:
         handovers = []
         produced = {}  # var_name -> {"agent": agent_name, "line": line_num}
@@ -1741,11 +1850,15 @@ class AgentHandoverAnalyser:
 
     def analyse_js(self, content: str, filepath: str, lines: list) -> list:
         """
-        Pattern-based (non-AST) handover detection for JS/TS — family 5's
-        manual-wrap sub-variant (LangChain.js): a sub-agent is wrapped
-        inside a ``tool(...)`` call whose body invokes that agent, and the
-        resulting tool is later passed into another agent's
-        ``createAgent({ tools: [...] })``.
+        Pattern-based (non-AST) handover detection for JS/TS:
+
+        - Family 5's manual-wrap sub-variant (LangChain.js): a sub-agent is
+          wrapped inside a ``tool(...)`` call whose body invokes that
+          agent, and the resulting tool is later passed into another
+          agent's ``createAgent({ tools: [...] })``.
+        - Family 7 (open-agent-sdk-typescript): a dict keyed by name,
+          ``const BUILTIN_AGENTS: Record<string, AgentDefinition> = {
+          Explore: {...}, Plan: {...} }``.
         """
         handovers = []
         tool_to_agent = {}
@@ -1756,22 +1869,30 @@ class AgentHandoverAnalyser:
             if inner and inner.group(1) != tool_var:
                 tool_to_agent[tool_var] = inner.group(1)
 
-        if not tool_to_agent:
-            return handovers
+        if tool_to_agent:
+            for m in _JS_CREATE_AGENT_DECL_RE.finditer(content):
+                orchestrator_var = m.group(1)
+                window = content[m.end():m.end() + _JS_WRAP_WINDOW]
+                tools_match = _JS_TOOLS_LIST_RE.search(window)
+                if not tools_match:
+                    continue
+                line_num = content[:m.start()].count("\n") + 1
+                for tool_name in re.findall(r'\w+', tools_match.group(1)):
+                    to_agent = tool_to_agent.get(tool_name)
+                    if to_agent:
+                        handovers.append(self._build_handover(
+                            {"agent": orchestrator_var, "line": line_num}, to_agent, "", line_num, lines, filepath,
+                        ))
 
-        for m in _JS_CREATE_AGENT_DECL_RE.finditer(content):
-            orchestrator_var = m.group(1)
-            window = content[m.end():m.end() + _JS_WRAP_WINDOW]
-            tools_match = _JS_TOOLS_LIST_RE.search(window)
-            if not tools_match:
-                continue
+        for m in _JS_AGENT_RECORD_DECL_RE.finditer(content):
+            registry_var = m.group(1)
+            span = _js_balanced_brace_span(content, m.end())
             line_num = content[:m.start()].count("\n") + 1
-            for tool_name in re.findall(r'\w+', tools_match.group(1)):
-                to_agent = tool_to_agent.get(tool_name)
-                if to_agent:
-                    handovers.append(self._build_handover(
-                        {"agent": orchestrator_var, "line": line_num}, to_agent, "", line_num, lines, filepath,
-                    ))
+            for key_m in _JS_RECORD_KEY_RE.finditer(span):
+                handovers.append(self._build_handover(
+                    {"agent": registry_var, "line": line_num}, key_m.group(1), "", line_num, lines, filepath,
+                ))
+
         return handovers
 
 

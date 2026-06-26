@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+Multi-agent handover detection — families 3 and 7 (recursive
+self-delegation, and named subagent registry). Grouped together since
+family 7 is family 3's static-declaration cousin: a predefined registry
+of subagents vs. a dynamically depth-tracked spawn tree.
+
+### Added
+
+- **Family 3 — recursive self-delegation.** A tool function (literally
+  named `delegate_task`/`delegate_agent`/`spawn_agent`/`spawn_subagent`)
+  that recursively spawns a child instance of the same agent. Requires a
+  depth-cap signal (`max_spawn_depth`/`MAX_DEPTH`/`max_depth`/
+  `child_depth`) present somewhere in the file to corroborate — the depth
+  cap, not the call name alone, is this family's structural signature, so
+  a function that happens to share one of these names without any
+  depth-tracking nearby is not matched. Re-scan after fix, Hermes's real
+  `tools/delegate_tool.py`: 0 → 2 agents / 1 handover (correctly matching
+  the tool's own self-referential registration,
+  `handler=lambda args, **kw: delegate_task(...)`).
+- **Family 7 — named subagent registry**, in both languages. Python:
+  `ClaudeAgentOptions(agents={"code-reviewer": AgentDefinition(...)})` —
+  a dict keyed by name, distinguished from family 2's same-named
+  `agents=` keyword by value type (family 2 requires a List, this
+  requires a Dict). Re-scan after fix, the real Claude Agent SDK
+  `examples/agents.py`: 0 → 5 agents / 4 handovers. JS/TS: `const
+  BUILTIN_AGENTS: Record<string, AgentDefinition> = { Explore: {...},
+  Plan: {...} }` — uses proper brace-balance matching
+  (`_js_balanced_brace_span`), not a character window, since an early
+  draft of this detector spilled past the object's closing brace into
+  unrelated code in the same file and produced false positives (caught
+  before landing). Re-scan after fix, the real
+  `open-agent-sdk-typescript/src/tools/agent-tool.ts`: 0 → 3 agents / 2
+  handovers.
+
+No regressions — AI-integration counts unchanged across a 10-repo
+regression sweep spanning both languages.
+
+---
+
 Multi-agent handover detection — family 5 (agent-as-tool). A sub-agent
 wrapped inside a tool definition, handed to a supervisor — the handover
 is invisible at the supervisor's declaration site, only visible by
