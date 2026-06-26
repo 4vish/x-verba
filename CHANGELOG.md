@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+Multi-agent handover detection — family 5 (agent-as-tool). A sub-agent
+wrapped inside a tool definition, handed to a supervisor — the handover
+is invisible at the supervisor's declaration site, only visible by
+tracing into the tool's body. Three independent wrapping syntaxes, all
+detected:
+
+### Added
+
+- **OpenAI Agents SDK's built-in method** — `Agent(tools=[spanish_agent
+  .as_tool(tool_name=..., tool_description=...), ...])`. Re-scan after
+  fix, the real `agents_as_tools.py` example: 0 → 3 agents / 3 handovers
+  (`orchestrator_agent` → `spanish_agent`/`french_agent`/`italian_agent`).
+- **Pydantic AI's decorator form** — `@triage_agent.tool` applied to a
+  function whose body calls a *different* agent's `.run(`/`.invoke(`.
+  Re-scan after fix, the real `medical_agent_delegation.py` example:
+  `triage_agent` → `specialist_agent`/`senior_doctor_agent`.
+- **LangChain.js's manual-wrap form, and the engine's first JS/TS
+  handover detection** (previously Python-AST-only) — `const
+  scheduleEvent = tool(async (...) => { await calendarAgent.invoke(...)
+  }, {...})` then `createAgent({ tools: [scheduleEvent] })`. Pattern-based
+  (windowed character-distance matching, not balanced-brace parsing,
+  consistent with how JS/TS detection works elsewhere in this engine).
+  Re-scan after fix, the real `subagents-personal-assistant.ts` example:
+  0 → 2 agents / 2 handovers; a 3rd, correctly generalised find on
+  `router-knowledge-base.ts` in the same directory — a compiled
+  `workflow` object (not literally named "...Agent") wrapped as a tool
+  the same way, picked up by the same `.invoke(` pattern match.
+
+No regressions — AI-integration counts unchanged across the full
+regression sweep (8 repos spanning both languages).
+
 ## 0.4.7
 
 Multi-agent handover detection — family 6 (constructor-keyword handoff

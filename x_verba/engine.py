@@ -1357,6 +1357,17 @@ _GRAPH_BUILDER_CONSTRUCTORS = {
 }
 _GRAPH_EDGE_METHODS = {"add_edge", "connect"}
 
+# JS/TS family 5 (agent-as-tool, LangChain.js's manual-wrap sub-variant):
+# ``const scheduleEvent = tool(async (...) => { ... await calendarAgent
+# .invoke(...) ... }, {...})`` then ``createAgent({ tools: [scheduleEvent] })``.
+# Windowed (character-distance) matching, not balanced-brace parsing — JS/TS
+# detection in this engine is pattern-based throughout, not AST-based.
+_JS_TOOL_WRAP_DECL_RE = re.compile(r'(?:const|let|var)\s+(\w+)\s*=\s*tool\s*\(')
+_JS_AGENT_CALL_RE = re.compile(r'(\w+)\.(?:invoke|run)\s*\(')
+_JS_CREATE_AGENT_DECL_RE = re.compile(r'(?:const|let|var)\s+(\w+)\s*=\s*createAgent\s*\(')
+_JS_TOOLS_LIST_RE = re.compile(r'tools\s*:\s*\[([^\]]*)\]')
+_JS_WRAP_WINDOW = 800
+
 # Constructor keyword arguments whose value is a list of agents — the
 # list-composition family (CrewAI's agents=, AutoGen's participants=,
 # Google ADK's sub_agents=, Semantic Kernel's members=) AND family 6's
@@ -1406,6 +1417,8 @@ class AgentHandoverAnalyser:
         handovers.extend(self._detect_graph_edges(tree, lines, filepath))
         handovers.extend(self._detect_list_composition(tree, lines, filepath))
         handovers.extend(self._detect_handoff_appends(tree, lines, filepath))
+        handovers.extend(self._detect_agent_as_tool(tree, lines, filepath))
+        handovers.extend(self._detect_decorator_tool_wrapping(tree, lines, filepath))
         return handovers
 
     # ── Family 1: graph/builder edges ─────────────────────────────────────
@@ -1576,6 +1589,69 @@ class AgentHandoverAnalyser:
             ))
         return handovers
 
+    # ── Family 5: agent-as-tool ────────────────────────────────────────────
+
+    def _detect_agent_as_tool(self, tree: ast.AST, lines: list, filepath: str) -> list:
+        """OpenAI Agents SDK's built-in sub-variant — a sub-agent wrapped via
+        its own ``.as_tool(...)`` method and passed straight into another
+        agent's ``tools=[...]``: ``Agent(tools=[spanish_agent.as_tool(...),
+        ...])``."""
+        assigned_names = self._collect_assigned_names(tree)
+        handovers = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for kw in node.keywords:
+                if kw.arg != "tools" or not isinstance(kw.value, ast.List):
+                    continue
+                orchestrator = (
+                    assigned_names.get(id(node))
+                    or self._get_call_string(node.func)
+                    or "Orchestrator"
+                )
+                line_num = getattr(node, "lineno", 0)
+                for el in kw.value.elts:
+                    if not (isinstance(el, ast.Call) and isinstance(el.func, ast.Attribute)):
+                        continue
+                    if el.func.attr != "as_tool":
+                        continue
+                    to_agent = self._literal_or_name(el.func.value)
+                    if to_agent:
+                        handovers.append(self._build_handover(
+                            {"agent": orchestrator, "line": line_num}, to_agent, "", line_num, lines, filepath,
+                        ))
+        return handovers
+
+    def _detect_decorator_tool_wrapping(self, tree: ast.AST, lines: list, filepath: str) -> list:
+        """Pydantic AI's decorator sub-variant — ``@triage_agent.tool``
+        applied to a function whose body calls a *different* agent's
+        ``.run(``/``.invoke(``, e.g.
+        ``@triage_agent.tool\\nasync def consult_specialist(ctx, ...):
+        result = await specialist_agent.run(...)``."""
+        handovers = []
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            orchestrator = None
+            for dec in node.decorator_list:
+                if isinstance(dec, ast.Attribute) and dec.attr == "tool" and isinstance(dec.value, ast.Name):
+                    orchestrator = dec.value.id
+                    break
+            if not orchestrator:
+                continue
+            for inner in ast.walk(node):
+                if not (isinstance(inner, ast.Call) and isinstance(inner.func, ast.Attribute)):
+                    continue
+                if inner.func.attr not in ("run", "invoke"):
+                    continue
+                root = inner.func.value
+                if isinstance(root, ast.Name) and root.id != orchestrator:
+                    line_num = getattr(inner, "lineno", 0)
+                    handovers.append(self._build_handover(
+                        {"agent": orchestrator, "line": line_num}, root.id, "", line_num, lines, filepath,
+                    ))
+        return handovers
+
     def _scan_body(self, body: list, lines: list, filepath: str) -> list:
         handovers = []
         produced = {}  # var_name -> {"agent": agent_name, "line": line_num}
@@ -1662,6 +1738,41 @@ class AgentHandoverAnalyser:
             ),
             "severity": "low" if pre_node_exists else "high",
         }
+
+    def analyse_js(self, content: str, filepath: str, lines: list) -> list:
+        """
+        Pattern-based (non-AST) handover detection for JS/TS — family 5's
+        manual-wrap sub-variant (LangChain.js): a sub-agent is wrapped
+        inside a ``tool(...)`` call whose body invokes that agent, and the
+        resulting tool is later passed into another agent's
+        ``createAgent({ tools: [...] })``.
+        """
+        handovers = []
+        tool_to_agent = {}
+        for m in _JS_TOOL_WRAP_DECL_RE.finditer(content):
+            tool_var = m.group(1)
+            window = content[m.end():m.end() + _JS_WRAP_WINDOW]
+            inner = _JS_AGENT_CALL_RE.search(window)
+            if inner and inner.group(1) != tool_var:
+                tool_to_agent[tool_var] = inner.group(1)
+
+        if not tool_to_agent:
+            return handovers
+
+        for m in _JS_CREATE_AGENT_DECL_RE.finditer(content):
+            orchestrator_var = m.group(1)
+            window = content[m.end():m.end() + _JS_WRAP_WINDOW]
+            tools_match = _JS_TOOLS_LIST_RE.search(window)
+            if not tools_match:
+                continue
+            line_num = content[:m.start()].count("\n") + 1
+            for tool_name in re.findall(r'\w+', tools_match.group(1)):
+                to_agent = tool_to_agent.get(tool_name)
+                if to_agent:
+                    handovers.append(self._build_handover(
+                        {"agent": orchestrator_var, "line": line_num}, to_agent, "", line_num, lines, filepath,
+                    ))
+        return handovers
 
 
 # ── Cluster governance analysis (Pass 5, NEW) ─────────────────────────────────
@@ -3450,6 +3561,16 @@ class ScanEngine:
                     except Exception as e:
                         if self.verbose:
                             console.print(f"[dim]Governance theatre scan error in {rel_path}: {e}[/dim]")
+
+                    # Pass 4 (JS/TS) — agent-to-agent handover detection,
+                    # family 5's manual-wrap sub-variant (LangChain.js).
+                    try:
+                        primitives["agent_handovers"].extend(
+                            self.handover_analyser.analyse_js(content, str(rel_path), lines)
+                        )
+                    except Exception as e:
+                        if self.verbose:
+                            console.print(f"[dim]JS agent handover scan error in {rel_path}: {e}[/dim]")
 
                 try:
                     pattern_calls = ai_call_fn(content, lines)
