@@ -129,6 +129,82 @@ _GUARDED_PROVIDER_IMPORTS = {
     "agents": ("openai_agents_sdk", ("Agent(", "Runner.run(", "handoff(")),
 }
 
+# Raw-HTTP AI-provider calls — no SDK import, no distinctive method name,
+# only a known provider hostname inside a generic fetch/httpx/requests/
+# custom-wrapper HTTP call. Confirmed 3 times this session: JS `fetch()`
+# (open-agent-sdk-typescript), Python `httpx` (omnigent), and a 20-file hit
+# via a custom `fetchWithCache()` wrapper (promptfoo) — the wrapper
+# function name is arbitrary and can't be enumerated; the hostname string
+# literal is the only signal common to all three. Language-agnostic (plain
+# string match), so this runs on every file regardless of extension.
+_AI_PROVIDER_HOSTNAMES = {
+    "api.openai.com": "openai",
+    "api.anthropic.com": "anthropic",
+    "api.cohere.com": "cohere",
+    "api.together.xyz": "together_ai",
+    "api.deepseek.com": "deepseek",
+    "api.mistral.ai": "mistral",
+    "generativelanguage.googleapis.com": "google",
+    "api.groq.com": "groq",
+    "api.perplexity.ai": "perplexity",
+    "api.fireworks.ai": "fireworks",
+    "openrouter.ai": "openrouter",
+    "api.x.ai": "xai",
+    "bedrock-runtime": "aws_bedrock",
+}
+_AI_HOSTNAME_RE = re.compile(
+    r'https?://[\w.-]*(' + '|'.join(re.escape(h) for h in _AI_PROVIDER_HOSTNAMES) + r')'
+)
+
+# Corroboration: an AI-provider hostname string by itself isn't enough —
+# confirmed false positive on a real repo where it was just a base_url
+# preset *value* passed through to an externally-spawned process, never
+# used to issue a request in that codebase at all (ClawTeam-OpenClaw's
+# spawn/presets.py). Require the file to also contain some HTTP-call-
+# shaped token somewhere — not necessarily near the URL (the 3 confirmed
+# real positives all have the URL and the eventual call in different
+# functions), just present *somewhere* in the file.
+_HTTP_CALL_VERB_RE = re.compile(
+    r'fetch\w*\s*\(|requests\.(get|post|put|delete)\s*\(|httpx\.|urlopen\s*\(|axios\.|urllib\.request'
+)
+
+
+def _detect_raw_http_ai_calls(content: str) -> list:
+    """Scan a file's raw content for a known AI-provider hostname as a
+    string literal, regardless of what function ultimately issues the
+    HTTP call. Only meaningful as a fallback when normal import/pattern
+    detection found nothing in this file (see call site).
+
+    Second corroboration, beyond _HTTP_CALL_VERB_RE: requires exactly ONE
+    distinct provider hostname in the whole file. Confirmed false positive
+    on two real repos otherwise — a multi-provider preset/config list
+    (ClawTeam-OpenClaw's spawn/presets.py, base_url values passed through
+    to an externally-spawned process) and a multi-provider CLI menu
+    (TradingAgents' cli/utils.py, a tuple list of provider display names)
+    both had a corroborating HTTP-call verb present *somewhere* in the
+    file, but were never themselves a real call site — they were
+    enumerating multiple providers, not implementing one. Every confirmed
+    real positive (omnigent, promptfoo) is a file dedicated to exactly one
+    provider."""
+    findings = []
+    if not _HTTP_CALL_VERB_RE.search(content):
+        return findings
+    matches = []
+    seen_providers = set()
+    for m in _AI_HOSTNAME_RE.finditer(content):
+        provider = _AI_PROVIDER_HOSTNAMES.get(m.group(1))
+        if not provider:
+            continue
+        seen_providers.add(provider)
+        if provider not in {p for p, _ in matches}:
+            line_num = content[:m.start()].count("\n") + 1
+            matches.append((provider, line_num))
+    if len(seen_providers) != 1:
+        return findings
+    for provider, line_num in matches:
+        findings.append({"line": line_num, "provider": provider})
+    return findings
+
 AI_CALL_METHODS = [
     "chat.completions.create", "completions.create",
     "ChatCompletion.create", "Completion.create",
@@ -3716,6 +3792,8 @@ class ScanEngine:
             except ValueError:
                 rel_path = fp
 
+            _ai_integrations_before_this_file = len(primitives["ai_integrations"])
+
             is_ai_file = file_data["has_ai"]
             is_adjacent = self._is_ai_adjacent_file(file_data, ai_file_paths)
             # Same scoping rule as irreversible-action detection below: a try/except
@@ -3874,6 +3952,36 @@ class ScanEngine:
                 except Exception as e:
                     if self.verbose:
                         console.print(f"[dim]{label} decision point scan error in {rel_path}: {e}[/dim]")
+
+            # Raw-HTTP AI-provider calls — no SDK import, no distinctive
+            # method name, only a known provider hostname inside a generic
+            # fetch/httpx/requests/custom-wrapper HTTP call. Only checked if
+            # this file produced zero AI-integration findings via the normal
+            # import/pattern-based detectors above, to avoid double-counting
+            # files that are already correctly detected.
+            if len(primitives["ai_integrations"]) == _ai_integrations_before_this_file:
+                try:
+                    for finding in _detect_raw_http_ai_calls(content):
+                        primitives["ai_integrations"].append({
+                            "id": f"AI-{len(primitives['ai_integrations'])+1:03d}",
+                            "provider": finding["provider"],
+                            "location": f"{rel_path}:{finding['line']}",
+                            "line_content": lines[finding["line"] - 1].strip() if 0 < finding["line"] <= len(lines) else "",
+                            "temperature": None,
+                            "max_tokens": None,
+                            "streaming": False,
+                            "dynamic_prompt": False,
+                            "user_input_in_prompt": False,
+                            "pre_node_detected": _assess_pre_node_strength(lines, finding["line"]) is not None,
+                            "human_review_detected": _has_human_review(lines, finding["line"]),
+                            "output_destination": self._detect_output_destination(lines, finding["line"]),
+                            "source_file": str(rel_path),
+                            "file_context": file_context,
+                            "via": "raw_http_hostname",
+                        })
+                except Exception as e:
+                    if self.verbose:
+                        console.print(f"[dim]Raw-HTTP AI-call scan error in {rel_path}: {e}[/dim]")
 
             # Irreversible actions — only on AI-adjacent files in ai-app profile
             should_scan_irrev = (

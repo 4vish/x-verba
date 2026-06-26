@@ -2,6 +2,71 @@
 
 ## Unreleased
 
+Raw-HTTP AI-provider call detection. Confirmed 3 times this session (JS
+`fetch()`, Python `httpx`, a 20-file hit via a custom `fetchWithCache()`
+wrapper in promptfoo) that an AI API call with no SDK import and no
+distinctive method name — just a known provider hostname inside a
+generic HTTP call — was entirely invisible. Implemented as a per-file
+fallback: only runs on a file that produced zero AI-integration findings
+via every existing import/pattern detector, so it can't double-count a
+file already correctly detected.
+
+### Added
+
+- `_detect_raw_http_ai_calls()` matches a curated set of ~13 major
+  AI-provider hostnames (OpenAI, Anthropic, Cohere, Together, DeepSeek,
+  Mistral, Google, Groq, Perplexity, Fireworks, OpenRouter, xAI, AWS
+  Bedrock) as string literals, language-agnostic. Re-scan after fix,
+  `omnigent`'s adapters (the original confirmation): 3 → 4 of `anthropic
+  .py`/`openai.py`/`gemini.py`/`bedrock.py` now correctly detected (was 1
+  of 4, `bedrock.py`, via `boto3`). `pydantic-ai`'s own `providers/groq.py`
+  (`httpx.AsyncClient`-based) caught as a genuine, previously-undetected
+  find.
+
+### Two precision bugs caught and fixed during verification, before
+### either landed
+
+- **Bare hostname presence isn't enough.** First draft matched a known
+  hostname anywhere in a file, with no requirement that the file
+  actually issue an HTTP call. False positive: `ClawTeam-OpenClaw`'s
+  `spawn/presets.py`, a `base_url=` preset *value* passed through to an
+  externally-spawned CLI process, never itself used to make a request.
+  Fixed: require an HTTP-call-shaped token (`fetch\w*(`, `requests.*(`,
+  `httpx.`, `urlopen(`, `axios.`, `urllib.request`) present somewhere in
+  the file — not necessarily near the URL, since the 3 confirmed real
+  positives all have the URL and the eventual call in different
+  functions.
+- **That alone still wasn't enough.** Second false positive, same class
+  one level removed: `TradingAgents`' `cli/utils.py:349-360`, a tuple
+  list of provider display names/hostnames for a CLI menu — a real
+  `requests.get(...)` call existed elsewhere in the same file (fetching
+  OpenRouter's model list), which satisfied the verb-corroboration check
+  even though the menu tuples themselves were never a call site. Fixed:
+  also require exactly one *distinct* provider hostname in the whole
+  file — every confirmed real positive is a file dedicated to one
+  provider; a multi-provider preset list or menu is enumeration data, not
+  an implementation.
+
+### Known limitation (not fixed in this release)
+
+- Cross-file delegation isn't traced. `promptfoo`'s `togetherai.ts` and
+  `openrouter.ts` each set a provider-specific `base_url`/hostname but
+  delegate the actual HTTP call to a shared `OpenAiChatCompletionProvider`
+  class in a *different file* (`openai/chat.ts`) — same general
+  limitation class as the interprocedural cases already documented for
+  list-composition (CrewAI-Studio's `**kwargs` unpacking) and family 4.
+  Of promptfoo's 20 originally-confirmed `fetchWithCache`-based provider
+  files, 7 are now caught (the ones using a listed hostname directly,
+  same-file); the rest either use a vendor hostname not in the curated
+  list (extending the list is a one-line addition if prioritized) or
+  delegate cross-file.
+
+No regressions — AI-integration counts unchanged across a 16-repo
+regression sweep (the two precision-bug repos confirmed back at their
+exact baseline after each fix).
+
+---
+
 Multi-agent handover detection — family 8 (team registry + publish/
 subscribe messaging). The first family whose handover signature spans
 *multiple files* — every confirmed real example splits the publish half
