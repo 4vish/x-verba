@@ -272,7 +272,7 @@ class OutputWriter:
                 "domain": None,
                 "governance_authority": None,
                 "scan_date": self.results.get("scan_date", ""),
-                "verba_version": self.results.get("verba_version", "0.4.3"),
+                "verba_version": self.results.get("verba_version", "0.4.4"),
                 "context_profile": self.results.get("context_profile", "ai-app"),
                 "reviewed": False,
                 "approved": False,

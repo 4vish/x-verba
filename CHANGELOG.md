@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.4.4
+
+### Added — governance theatre detection
+
+- New detector for a specific TS/JS anti-pattern: an agent-action
+  framework's `validate()` function that unconditionally returns `true`
+  regardless of its input (a bare `=> true` arrow, or a body whose
+  parameters are all underscore-prefixed/unused) — present and callable,
+  but never actually checking anything. Scoped to require a corroborating
+  agent-action-framework signal (`handler:`, `iagentruntime`,
+  `@elizaos/core`, `similes:`) in the same file, so it doesn't fire on
+  unrelated `validate()` functions elsewhere in a codebase. Confirmed on
+  elizaOS-pattern plugins (49 findings on a real plugin set during
+  development); 0 false positives confirmed on every non-agent-framework
+  TS/JS repo scanned this session.
+
+### AI-provider detection
+
+AI-provider detection release. Scanned 35+ real repositories across every
+major current agent framework/SDK (LangChain v1, OpenAI Agents SDK, Google
+ADK, Anthropic's Claude Agent SDK in both Python and JS/TS, AWS Strands,
+AWS's JS Bedrock SDK, LlamaIndex's agent/workflow submodule, Agency Swarm)
+and found the same class of bug nine times: each framework's own current
+top-level import was simply absent from the provider-detection tables,
+causing affected scans to report **zero AI integrations** — not a missing
+inventory section, the entire scan finding nothing to evaluate. Every fix
+below was verified empirically by re-scanning the real repository
+before/after the change.
+
+### Fixed — AI-provider import detection (9 confirmed gaps)
+
+- **Modern LangChain (v1.x)** — `langchain.chat_models` (the new
+  provider-agnostic `init_chat_model` factory) and `langchain.agents` (the
+  new unified `create_agent` constructor) were missing; only the legacy
+  `langchain_openai`/`AgentExecutor` surface was recognised. Confirmed
+  100% false negative on `chat-langchain`, a real production RAG agent.
+  Re-scan after fix: 0 → 7 AI integrations.
+- **OpenAI Agents SDK** — its package is literally named `agents`, too
+  generic to safelist outright (would false-positive on any unrelated
+  local module of the same name). Added as a *guarded* import: only
+  recognised when the file also contains `Agent(`, `Runner.run(`, or
+  `handoff(` — the same precaution already used for generic method names.
+  Re-scan after fix: 0 → 8 AI integrations.
+- **Google ADK and the newer `google.genai` SDK** — distinct from
+  `google.generativeai`, which was already recognised. Confirmed on a
+  real multi-agent payments app (Google's AP2). Re-scan after fix
+  (bypassing an unrelated pre-existing `SKIP_DIRS` bug that excludes any
+  `samples/` directory — see Known Issues): 0 → 15 AI integrations.
+- **Anthropic's Claude Agent SDK — Python and JS/TS, two separate fixes.**
+  The Python package is `claude_agent_sdk`; the JS/TS package is the
+  differently-named `@anthropic-ai/claude-agent-sdk`. Both were missing —
+  fixing one does not fix the other, even for the same vendor's own SDK.
+  Re-scan after fix: SDK examples 0 → 102; a real desktop app built on the
+  JS/TS package, 0 → 6.
+- **AWS Strands Agents** (`strands` package) — distinct from
+  `bedrock_agentcore` (a separate AWS runtime/deployment SDK, already
+  recognised via `boto3`). Confirmed on a real Bedrock chat app where the
+  actual agent-construction file was invisible despite the app's overall
+  AI-integration count looking nonzero (from unrelated `boto3` calls
+  elsewhere) — a reminder that a nonzero count can still hide a 100% miss
+  on the framework that actually matters. Re-scan after fix: the specific
+  file now appears in the contract.
+- **AWS SDK for JavaScript v3's Bedrock clients** — distinct from Python's
+  `boto3`, already recognised. Confirmed on a real, fully-functional
+  Electron desktop app. Re-scan after fix: 0 → 34 AI integrations.
+- **LlamaIndex's agent/workflow submodule** — `llama_index.llms` was
+  already recognised, but `llama_index.core.agent`/`llama_index.core.workflow`
+  were not; import matching is by full dotted path, not top-level package,
+  so partial recognition of one submodule doesn't extend to another.
+  Re-scan after fix: 1 → 61 AI integrations.
+- **Agency Swarm** (`agency_swarm` package) — confirmed on a real
+  multi-agent assistant app. Re-scan after fix: 15 → 90 AI integrations.
+
+### Known issues (not fixed in this release)
+
+- `SKIP_DIRS` unconditionally excludes `examples/` and `samples/` (among
+  others), even when those directories contain the only relevant source
+  in a repo, and even when explicitly passed via `--focus`. Confirmed on
+  `langchainjs` and `google-agentic-commerce/AP2`. Scheduled for a
+  follow-up release alongside the other file-walker bugs (`--focus`
+  cwd-resolution, no minified-bundle exclusion, `.test-d.ts` not matching
+  the test-file regex).
+- Raw-HTTP AI-provider calls (no SDK import, no distinctive method name —
+  just a provider hostname inside a generic `fetch`/`httpx`/custom-wrapper
+  call) remain undetected. Confirmed on 3 independent codebases, including
+  20 provider files in a single repo (`promptfoo`). Needs a different
+  detection strategy (hostname/path matching) and is scheduled separately.
+- Multi-agent handover detection (`agent_inventory` reporting 0 agents/
+  handovers on real multi-agent repos) is a separate, larger body of work
+  — 9 confirmed handover shapes across the frameworks above, not yet
+  implemented.
+
 ## 0.4.3
 
 Detection-accuracy release. Every fix below was found by reading the engine

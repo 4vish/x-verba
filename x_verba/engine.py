@@ -92,12 +92,41 @@ AI_PROVIDER_IMPORTS = {
     "langchain_community.llms": "langchain",
     "langchain_community.chat_models": "langchain",
     "llama_index.llms": "llama_index",
+    # LlamaIndex's agent/workflow orchestration submodules — distinct from
+    # llama_index.llms above; a framework partially recognised via one
+    # submodule is not necessarily recognised via another.
+    "llama_index.core.agent": "llama_index",
+    "llama_index.core.workflow": "llama_index",
     "transformers": "huggingface",
     # Meta AI / Llama — direct SDKs and common Llama-hosting providers.
     "llama_api_client": "meta_llama",
     "llama_stack_client": "meta_llama",
     "replicate": "replicate",
     "together": "together_ai",
+    # Modern LangChain (v1.x) top-level API — distinct from the legacy
+    # langchain_openai/langchain_community.* surface above.
+    "langchain.chat_models": "langchain",
+    "langchain.agents": "langchain",
+    # Google's Agent Development Kit and the newer unified Gemini SDK
+    # (replacing google.generativeai).
+    "google.adk": "google",
+    "google.genai": "google",
+    # Anthropic's own Claude Agent SDK (Python).
+    "claude_agent_sdk": "anthropic",
+    # AWS's own open-source agent framework — distinct from boto3 and from
+    # bedrock_agentcore (a separate runtime/deployment SDK).
+    "strands": "aws_bedrock",
+    # Agency Swarm (VRSEN).
+    "agency_swarm": "agency_swarm",
+}
+
+# Module names too generic to safelist outright as an AI-provider import —
+# "agents" in particular could be an unrelated local package. Only registered
+# as an AI import if the file's source also contains one of the listed
+# corroborating call-site signals, confirming this really is the OpenAI
+# Agents SDK and not a coincidentally named local module.
+_GUARDED_PROVIDER_IMPORTS = {
+    "agents": ("openai_agents_sdk", ("Agent(", "Runner.run(", "handoff(")),
 }
 
 AI_CALL_METHODS = [
@@ -378,7 +407,7 @@ class ASTAnalyser:
         except (SyntaxError, ValueError, RecursionError):
             return {"ai_calls": [], "imports": {}, "parse_error": True}
 
-        self._collect_imports(tree)
+        self._collect_imports(tree, source)
         self._collect_calls(tree, source.splitlines())
 
         return {
@@ -387,7 +416,7 @@ class ASTAnalyser:
             "parse_error": False,
         }
 
-    def _collect_imports(self, tree: ast.AST) -> None:
+    def _collect_imports(self, tree: ast.AST, source: str) -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -395,15 +424,32 @@ class ASTAnalyser:
                         if alias.name == pkg or alias.name.startswith(pkg + "."):
                             local = alias.asname or alias.name.split(".")[0]
                             self.ai_imports[local] = provider
+                    for pkg, (provider, signals) in _GUARDED_PROVIDER_IMPORTS.items():
+                        if (alias.name == pkg or alias.name.startswith(pkg + ".")) and any(
+                            sig in source for sig in signals
+                        ):
+                            local = alias.asname or alias.name.split(".")[0]
+                            self.ai_imports[local] = provider
 
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
+                matched = False
                 for pkg, provider in AI_PROVIDER_IMPORTS.items():
                     if module == pkg or module.startswith(pkg + "."):
                         for alias in node.names:
                             local = alias.asname or alias.name
                             self.ai_imports[local] = provider
+                        matched = True
                         break
+                if not matched:
+                    for pkg, (provider, signals) in _GUARDED_PROVIDER_IMPORTS.items():
+                        if (module == pkg or module.startswith(pkg + ".")) and any(
+                            sig in source for sig in signals
+                        ):
+                            for alias in node.names:
+                                local = alias.asname or alias.name
+                                self.ai_imports[local] = provider
+                            break
 
     def _collect_calls(self, tree: ast.AST, lines: list) -> None:
         for node in ast.walk(tree):
@@ -525,6 +571,16 @@ JS_AI_PATTERNS = [
     (r'together\.chat\.completions\.create', "together_ai"),
     (r'new\s+Replicate\s*\(', "replicate"),
     (r'replicate\.run\s*\(', "replicate"),
+    # Anthropic's own Claude Agent SDK (JS/TS) — distinct package name from
+    # the Python claude_agent_sdk; same vendor, separate fix required.
+    (r'@anthropic-ai/claude-agent-sdk', "anthropic"),
+    # AWS SDK for JavaScript v3 — Bedrock clients (distinct from Python's
+    # boto3, which is already recognised).
+    (r'@aws-sdk/client-bedrock-runtime', "aws_bedrock"),
+    (r'@aws-sdk/client-bedrock-agent-runtime', "aws_bedrock"),
+    (r'new\s+BedrockRuntimeClient\s*\(', "aws_bedrock"),
+    (r'\bConverseCommand\b', "aws_bedrock"),
+    (r'\bInvokeModelCommand\b', "aws_bedrock"),
 ]
 
 # github.com/sashabaranov/go-openai, anthropic-sdk-go, langchaingo, google genai SDK, ollama.
@@ -2574,6 +2630,105 @@ def _has_authorisation_gate(lines: list, line_num: int) -> bool:
     )
 
 
+# ── Governance theatre (TS/JS validate() with no usable parameter access) ────
+#
+# Agent-action frameworks (elizaOS, Infinity, and similar frameworks built
+# on the same convention) gate execution behind a validate(runtime, message, state)
+# function — if it returns true, the action fires. "Governance theatre" is
+# when that function structurally cannot check anything (no parameters, or
+# every parameter underscored — TypeScript's "intentionally unused" marker)
+# yet still returns true unconditionally. The gate exists; it enforces
+# nothing.
+#
+# Scoped deliberately to only the cases that are a structural FACT, not a
+# judgment call: a function with no parameter access cannot possibly check
+# identity, authorisation, or message content, regardless of what's in its
+# body. Config-only checks, keyword-only checks, and "is the gate sufficient
+# for this action's risk level" all require contextual judgment about what a
+# specific action needs — that's a human decision, not something a
+# deterministic structural scanner should assert.
+# A bare-expression arrow (`=> true`, no braces) never references its
+# parameters no matter what they're named — this covers the param-less form,
+# the underscored form, AND named-but-unused params in one structurally
+# certain pattern, since the syntactic shape itself proves the params are
+# unused, regardless of naming convention.
+_THEATRE_BARE_TRUE = re.compile(
+    r"validate\s*:\s*async\s*\([^)]*\)\s*(?::\s*Promise<boolean>\s*)?=>\s*\btrue\b",
+)
+
+# A block body (`=> { ... return true; }`) can't be proven empty by syntax
+# alone — this relies on the underscore naming convention as the developer's
+# own signal that ALL parameters are unused. Known approximation: a function
+# with real conditional logic that happens to contain the literal substring
+# "return true" within 300 characters could still match. Same limitation the
+# source audit's own proposed pattern accepted — flagged for human review,
+# not asserted as certain.
+_THEATRE_UNDERSCORED_BLOCK = re.compile(
+    r"validate\s*:\s*async\s*\("
+    r"\s*_\w+(?:\s*:[^,)]+)?\s*"
+    r"(?:,\s*_\w+(?:\s*:[^,)]+)?\s*)*"
+    r"\)\s*(?::\s*Promise<boolean>\s*)?=>\s*"
+    r"\{[^}]{0,300}return\s+true;?\s*\}",
+    re.DOTALL,
+)
+
+# "validate" alone is far too generic a name to be specific to AI agent
+# action gating — a form validator or API request validator would match the
+# patterns above just as easily. Require at least one corroborating signal
+# that this file actually defines agent-framework actions before flagging
+# anything. (File-level, not match-level — matching object boundaries
+# precisely would need a real parser, not a regex.) The literal strings here
+# are the real package/type names from the one framework convention we have
+# audited evidence for (elizaOS's Action interface) — not decorative.
+_AGENT_ACTION_FRAMEWORK_SIGNALS = ("handler:", "iagentruntime", "@elizaos/core", "similes:")
+
+
+def _detect_governance_theatre(content: str, filepath: str) -> list:
+    """Detect validate() functions that structurally cannot perform any
+    check yet unconditionally return true — present in the structural
+    position of a governance gate while enforcing nothing."""
+    findings = []
+    if TEST_FILE_RE.search(filepath):
+        return findings
+    content_lower = content.lower()
+    if not any(s in content_lower for s in _AGENT_ACTION_FRAMEWORK_SIGNALS):
+        return findings
+
+    lines_list = content.splitlines()
+    seen_lines = set()
+    for pattern, form in (
+        (_THEATRE_BARE_TRUE, "UNCONDITIONAL_VALIDATE"),
+        (_THEATRE_UNDERSCORED_BLOCK, "UNDERSCORE_PARAM_VALIDATE"),
+    ):
+        for m in pattern.finditer(content):
+            line_num = content[:m.start()].count("\n") + 1
+            if line_num in seen_lines:
+                continue
+            seen_lines.add(line_num)
+            line_text = lines_list[line_num - 1].strip() if 0 < line_num <= len(lines_list) else ""
+            findings.append({
+                "type": "governance_theatre",
+                "form": form,
+                "location": f"{filepath}:{line_num}",
+                "line_content": line_text[:160],
+                "severity": "critical",
+                "plain_english": (
+                    f"validate() at {filepath}:{line_num} has no usable parameter "
+                    f"access — it structurally cannot check identity, authorisation, "
+                    f"or message content — but unconditionally returns true. The "
+                    f"action fires for any matching message."
+                ),
+                "recommended_action": (
+                    "Check that the runtime has the required service available, "
+                    "that the message has a traceable sender identity, and — for "
+                    "destructive or financial actions — that the sender is "
+                    "authorised. A function that ignores all its parameters "
+                    "cannot do any of this."
+                ),
+            })
+    return findings
+
+
 # ── Main scan engine ──────────────────────────────────────────────────────────
 
 class ScanEngine:
@@ -2662,7 +2817,7 @@ class ScanEngine:
             "scan_date": datetime.now(timezone.utc).isoformat(),
             "repo": str(path),
             "identity_key": identity_key,
-            "verba_version": "0.4.3",
+            "verba_version": "0.4.4",
             "context_profile": self.context_profile,
             "reviewed": False,
             "focus_paths": focus_paths or [],
@@ -2723,6 +2878,7 @@ class ScanEngine:
             primitives["cluster_governance_gaps"] = cluster_governance_gaps
             results["cluster_governance_gaps"] = cluster_governance_gaps
             results["terminal_states"] = primitives.get("terminal_states", [])
+            results["governance_theatre"] = primitives.get("governance_theatre", [])
             progress.update(t4d, completed=True)
 
             t6 = progress.add_task("Pass 6 — Matching Drift Classes & Legions...", total=None)
@@ -2913,6 +3069,8 @@ class ScanEngine:
             "transformers", "bedrock", "cohere", "generativeai",
             "ChatCompletion", "messages.create", "invoke_model",
             "generateText", "streamText",
+            "claude_agent_sdk", "google.adk", "google.genai",
+            "strands", "agency_swarm",
         ]
         content_lower = content.lower()
         return any(sig.lower() in content_lower for sig in ai_signals)
@@ -2943,6 +3101,7 @@ class ScanEngine:
             "consequences": [],
             "agent_handovers": [],
             "terminal_states": [],
+            "governance_theatre": [],
         }
 
         # First pass: identify AI-containing files
@@ -3036,6 +3195,20 @@ class ScanEngine:
             # 2, 5) via the shared PatternDecisionPointAnalyser subclasses.
             elif ext in PATTERN_LANGUAGE_CONFIG:
                 ai_call_fn, decision_analyser_attr, label = PATTERN_LANGUAGE_CONFIG[ext]
+
+                # Governance theatre — TS/JS only (agent-action-framework
+                # validate() functions). Not gated by AI-adjacency: an action
+                # registered into an agent's action set is part of the agent's
+                # governance surface even if validate() itself makes no direct
+                # AI SDK call — the LLM decides whether to invoke it elsewhere.
+                if ext in (".js", ".ts", ".jsx", ".tsx"):
+                    try:
+                        theatre_findings = _detect_governance_theatre(content, str(rel_path))
+                        primitives["governance_theatre"].extend(theatre_findings)
+                    except Exception as e:
+                        if self.verbose:
+                            console.print(f"[dim]Governance theatre scan error in {rel_path}: {e}[/dim]")
+
                 try:
                     pattern_calls = ai_call_fn(content, lines)
                     for call in pattern_calls:
@@ -5179,6 +5352,31 @@ class ReportBuilder:
         lines.append("")
         return "\n".join(lines)
 
+    def governance_theatre(self, theatre_findings: list) -> str:
+        """TS/JS validate() functions with no usable parameter access that
+        unconditionally return true — a governance gate that enforces
+        nothing. Additive finding category; does not affect Gamma."""
+        lines = _section_header("GOVERNANCE THEATRE")
+
+        if not theatre_findings:
+            lines.append("No governance theatre detected.")
+            lines.append("")
+            return "\n".join(lines)
+
+        lines.append(
+            f"Validators with no usable parameter access, returning "
+            f"unconditional true: {len(theatre_findings)}"
+        )
+        lines.append("")
+        for idx, f in enumerate(theatre_findings[:10], start=1):
+            lines.append(f"{idx}. {f['location']}  [{f['form']}]")
+            lines.append(f"     {f.get('plain_english', '')}")
+            lines.append("")
+        if len(theatre_findings) > 10:
+            lines.append(f"  ... and {len(theatre_findings) - 10} more.")
+            lines.append("")
+        return "\n".join(lines)
+
     # ── Section 8 ──────────────────────────────────────────────────────────
 
     # Behavioural domain groupings for Drift Class codes
@@ -5372,6 +5570,9 @@ class OutputFormatter:
             results.get("gaps", []), results.get("decision_point_gaps", []),
             results.get("agent_handovers", []), results.get("cluster_governance_gaps", []),
             results.get("terminal_states", []),
+        ))
+        sections.append(self.report_builder.governance_theatre(
+            results.get("governance_theatre", []),
         ))
         sections.append(self.report_builder.drift_class_detections(
             results.get("drift_classes", []), results.get("legion_matches", []),
