@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.4.7
+
+Multi-agent handover detection — family 6 (constructor-keyword handoff
+list). Reuses the same AST shape as family 2's list-composition (a
+constructor keyword whose value is a list) since `handoffs=` is
+structurally identical, just a different semantic label — no new
+detection mechanism needed, only a new keyword and one extra method for
+the post-construction mutation form.
+
+### Added
+
+- **`Agent(handoffs=[...])`, both confirmed sub-variants.** OpenAI Agents
+  SDK's wrapper-object form — `handoffs=[handoff(agent=faq_agent,
+  on_handoff=..., tool_name_override=...), ...]` — and Swarms' flat-list
+  form — `handoffs=[agent1, agent2]` (no wrapper call). `_literal_or_name`
+  now resolves an `agent=` keyword on an inline call, recursively, to
+  find the real target through the `handoff(...)` wrapper.
+- **`faq_agent.handoffs.append(handoff(agent=triage_agent, ...))`** — the
+  post-construction mutation form, detected as a separate pattern (an
+  `.append()` call on a `.handoffs` attribute).
+- Re-scan after fix, `openai-agents-python`'s real customer-service
+  example: 0 → 3 agents / 4 handovers (all 4 edges of the
+  triage/faq/seat-booking graph, including both directions of the
+  `.handoffs.append()` mutations).
+
+### Known limitation (not fixed in this release)
+
+- `on_handoff=` presence/absence at a given edge is a documented
+  governance-relevant signal (a real callback that runs before/during the
+  handoff) but isn't yet recognised as a Pre-Node by `_assess_pre_node_strength`
+  — all family 6 handovers currently report as ungoverned regardless of
+  whether `on_handoff=` is present. Confirmed on the same
+  `openai-agents-python` example (the `seat_booking_agent` handoff has
+  `on_handoff=on_seat_booking_handoff` but still reports ungoverned).
+  Scheduled as a follow-up refinement, not a detection gap.
+
 ## 0.4.6
 
 Multi-agent handover detection — families 1 and 2. `agent_inventory`

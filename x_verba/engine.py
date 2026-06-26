@@ -1359,13 +1359,16 @@ _GRAPH_EDGE_METHODS = {"add_edge", "connect"}
 
 # Constructor keyword arguments whose value is a list of agents — the
 # list-composition family (CrewAI's agents=, AutoGen's participants=,
-# Google ADK's sub_agents=, Semantic Kernel's members=).
-_LIST_COMPOSITION_KEYWORDS = {"agents", "participants", "sub_agents", "members"}
+# Google ADK's sub_agents=, Semantic Kernel's members=) AND family 6's
+# constructor-keyword handoff list (OpenAI Agents SDK's / Swarms'
+# handoffs=) — structurally the same AST shape (a constructor keyword
+# whose value is a list), just a different semantic label.
+_LIST_COMPOSITION_KEYWORDS = {"agents", "participants", "sub_agents", "members", "handoffs"}
 
 
 class AgentHandoverAnalyser:
     """
-    AST-based detection of agent-to-agent handovers. Three independent
+    AST-based detection of agent-to-agent handovers. Four independent
     detection passes, each matching a different real-world framework shape
     (see .claude/skills/agent-handover-detection for the source evidence):
 
@@ -1377,6 +1380,12 @@ class AgentHandoverAnalyser:
     3. List-composition — ``Crew(agents=[...])``, ``RoundRobinGroupChat(
        participants=[...])``, ``Agent(sub_agents=[...])``,
        ``HandoffOrchestration(members=...)``.
+    4. Constructor-keyword handoff list (family 6) — ``Agent(handoffs=[
+       handoff(agent=faq_agent, on_handoff=..., tool_name_override=...),
+       ...])`` (OpenAI Agents SDK's wrapper-object sub-variant) or
+       ``Agent(handoffs=[agent1, agent2])`` (Swarms' flat-list sub-variant),
+       plus the post-construction mutation
+       ``faq_agent.handoffs.append(handoff(agent=triage_agent, ...))``.
 
     For each handover, checks whether a Pre-Node (validation/authorization/
     schema/approval) guards the receiving call — i.e. fires BEFORE the
@@ -1396,6 +1405,7 @@ class AgentHandoverAnalyser:
                 handovers.extend(self._scan_body(node.body, lines, filepath))
         handovers.extend(self._detect_graph_edges(tree, lines, filepath))
         handovers.extend(self._detect_list_composition(tree, lines, filepath))
+        handovers.extend(self._detect_handoff_appends(tree, lines, filepath))
         return handovers
 
     # ── Family 1: graph/builder edges ─────────────────────────────────────
@@ -1435,16 +1445,20 @@ class AgentHandoverAnalyser:
     def _literal_or_name(self, node) -> Optional[str]:
         """Best-effort readable label for an AST expression: a string
         constant's value, a bare name's identifier, or (for an inline
-        constructor call like ``Agent(name="x")``) its name/role keyword —
-        falling back to ``ast.unparse`` for anything else."""
+        constructor/wrapper call like ``Agent(name="x")`` or
+        ``handoff(agent=faq_agent, ...)``) its name/agent/role keyword,
+        resolved recursively — falling back to ``ast.unparse`` for
+        anything else."""
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value
         if isinstance(node, ast.Name):
             return node.id
         if isinstance(node, ast.Call):
             for kw in node.keywords:
-                if kw.arg in ("name", "agent_name", "role") and isinstance(kw.value, ast.Constant):
-                    return str(kw.value.value)
+                if kw.arg in ("name", "agent_name", "role", "agent"):
+                    resolved = self._literal_or_name(kw.value)
+                    if resolved:
+                        return resolved
             if isinstance(node.func, (ast.Name, ast.Attribute)):
                 return self._get_call_string(node.func)
         try:
@@ -1538,6 +1552,28 @@ class AgentHandoverAnalyser:
                     handovers.append(self._build_handover(
                         {"agent": orchestrator, "line": line_num}, member, "", line_num, lines, filepath,
                     ))
+        return handovers
+
+    def _detect_handoff_appends(self, tree: ast.AST, lines: list, filepath: str) -> list:
+        """Family 6's post-construction mutation form —
+        ``faq_agent.handoffs.append(handoff(agent=triage_agent, ...))``."""
+        handovers = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            if node.func.attr != "append" or not node.args:
+                continue
+            target = node.func.value
+            if not (isinstance(target, ast.Attribute) and target.attr == "handoffs"):
+                continue
+            from_agent = self._literal_or_name(target.value)
+            to_agent = self._literal_or_name(node.args[0])
+            if not from_agent or not to_agent:
+                continue
+            line_num = getattr(node, "lineno", 0)
+            handovers.append(self._build_handover(
+                {"agent": from_agent, "line": line_num}, to_agent, "", line_num, lines, filepath,
+            ))
         return handovers
 
     def _scan_body(self, body: list, lines: list, filepath: str) -> list:
@@ -2995,7 +3031,7 @@ class ScanEngine:
             "scan_date": datetime.now(timezone.utc).isoformat(),
             "repo": str(path),
             "identity_key": identity_key,
-            "verba_version": "0.4.6",
+            "verba_version": "0.4.7",
             "context_profile": self.context_profile,
             "reviewed": False,
             "focus_paths": focus_paths or [],
