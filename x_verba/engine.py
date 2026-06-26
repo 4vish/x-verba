@@ -347,7 +347,16 @@ SKIP_FILENAMES = frozenset({"conftest.py", "setup.cfg", "setup.py"})
 # decision points (assertions, mocked branches, etc.) skew governance
 # metrics and PageRank/critical-path toward test code.
 TEST_FILE_RE = re.compile(
-    r'\.(test|spec)\.[\w.]*[jt]sx?$|_test\.go$|_test\.py$|^test_.*\.py$',
+    r'\.(test|spec)(-d)?\.[\w.]*[jt]sx?$|_test\.go$|_test\.py$|^test_.*\.py$',
+    re.IGNORECASE,
+)
+
+# Minified/bundled JS shipped inside a source tree (e.g. a CLI tool's own
+# bundled web UI) — content-hashed build artifacts, not hand-written source.
+# Matches `*.min.js` and webpack/esbuild-style hashed chunk filenames like
+# `main-3CUQG2IN.js` / `chunk-NALL4A3P.js`.
+MINIFIED_BUNDLE_RE = re.compile(
+    r'\.min\.[jt]s$|^(?:main|chunk|vendor|runtime|polyfills?)[-.][A-Za-z0-9]{6,}\.[jt]s$',
     re.IGNORECASE,
 )
 
@@ -2817,7 +2826,7 @@ class ScanEngine:
             "scan_date": datetime.now(timezone.utc).isoformat(),
             "repo": str(path),
             "identity_key": identity_key,
-            "verba_version": "0.4.4",
+            "verba_version": "0.4.5",
             "context_profile": self.context_profile,
             "reviewed": False,
             "focus_paths": focus_paths or [],
@@ -3022,13 +3031,36 @@ class ScanEngine:
 
     def _collect_files(self, path: Path, focus_paths: list = None) -> list:
         resolved_focus = (
-            [Path(p).resolve() for p in focus_paths] if focus_paths else None
+            [
+                (p_path if p_path.is_absolute() else path / p_path).resolve()
+                for p_path in (Path(p) for p in focus_paths)
+            ]
+            if focus_paths else None
         )
         files = []
         for root, dirs, filenames in os.walk(path):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            root_path = Path(root)
+            if resolved_focus is not None:
+                # A directory normally excluded by SKIP_DIRS (e.g. "examples")
+                # must still be walked into if it's required to reach an
+                # explicit --focus target — i.e. it IS the target, or an
+                # ancestor of it. Once inside the focus subtree, normal
+                # SKIP_DIRS rules resume (a node_modules/ nested inside a
+                # focused directory is still skipped).
+                dirs[:] = [
+                    d for d in dirs
+                    if d not in SKIP_DIRS or any(
+                        (cand := (root_path / d).resolve()) == foc
+                        or cand in foc.parents
+                        for foc in resolved_focus
+                    )
+                ]
+            else:
+                dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             for fn in filenames:
                 if TEST_FILE_RE.search(fn):
+                    continue
+                if MINIFIED_BUNDLE_RE.search(fn):
                     continue
                 if fn in SKIP_FILENAMES:
                     continue

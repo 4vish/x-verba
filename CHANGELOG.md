@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.5
+
+File-walker fixes. All four were found by reading `_collect_files()` and
+its supporting constants against real repos, then verified empirically by
+re-scanning before/after each change.
+
+### Fixed
+
+- **`.test-d.ts` (vitest/tsd type-testing convention) wasn't recognised as
+  a test file.** `TEST_FILE_RE` required a literal `.` immediately after
+  `test`/`spec`, so `.test.ts` matched but `.test-d.ts` (hyphen instead of
+  dot) did not. On a real scan (`vercel/ai`), **126 of 128 candidate
+  governance nodes (98.4%) traced back to a single type-test file** with
+  no real application logic — the scan's entire headline result (128
+  critical findings, Gamma 0.08) was almost completely noise from this one
+  misclassification. Likely the highest-impact single bug fixed across
+  this round of work.
+- **`--focus` resolved relative paths against the CLI process's working
+  directory, not the scanned repository.** `--focus packages/core/src`
+  silently returned 0 files scanned unless run from inside the target
+  repo. Now resolved relative to the repo path being scanned.
+- **`SKIP_DIRS` pruned directories named `examples`/`samples`/`docs`/etc.
+  even when an explicit `--focus` target lived inside one of them** —
+  `--focus examples/src/multi-agent` returned 0 files even with the path
+  bug above fixed, because the walker pruned `examples/` before the focus
+  filter ever ran. Now a normally-skipped directory is still walked into
+  if it's required to reach an explicit focus target (the target itself,
+  or one of its ancestors); once inside the focus subtree, normal
+  skip-dir rules resume as expected. Re-scan after both `--focus` fixes
+  (`langchainjs`, `--focus examples/src/multi-agent`): 0 → 5 files.
+- **No exclusion for minified/bundled JS shipped inside a source tree.**
+  A CLI tool's own bundled web UI (a 4,210-line minified Angular build
+  artifact) was scanned as real source and showed up in the scan's top
+  influential decisions by PageRank — pure noise from a vendored,
+  built artifact. Added a filename heuristic for `*.min.js` and
+  webpack/esbuild-style content-hashed chunk filenames
+  (`main-3CUQG2IN.js`, `chunk-NALL4A3P.js`). Confirmed via re-scan
+  (`google/adk-python`): the bundle no longer appears anywhere in the
+  contract.
+
 ## 0.4.4
 
 ### Added — governance theatre detection
