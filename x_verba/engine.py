@@ -1351,11 +1351,32 @@ class ConsequenceClassifier:
 
 # ── Agent handover detection (Pass 4, NEW) ────────────────────────────────────
 
+_GRAPH_BUILDER_CONSTRUCTORS = {
+    "StateGraph", "WorkflowBuilder", "DiGraphBuilder", "GraphBuilder",
+    "Pipeline", "Graph",
+}
+_GRAPH_EDGE_METHODS = {"add_edge", "connect"}
+
+# Constructor keyword arguments whose value is a list of agents — the
+# list-composition family (CrewAI's agents=, AutoGen's participants=,
+# Google ADK's sub_agents=, Semantic Kernel's members=).
+_LIST_COMPOSITION_KEYWORDS = {"agents", "participants", "sub_agents", "members"}
+
+
 class AgentHandoverAnalyser:
     """
-    AST-based detection of agent-to-agent handovers — where the output of
-    one agent call (e.g. ``agent_a.run(x)``) becomes the input of another
-    agent call (e.g. ``agent_b.run(output_a)``).
+    AST-based detection of agent-to-agent handovers. Three independent
+    detection passes, each matching a different real-world framework shape
+    (see .claude/skills/agent-handover-detection for the source evidence):
+
+    1. Variable-passing — the output of one agent call (e.g. ``agent_a.run(x)``)
+       becomes the input of another agent call (e.g. ``agent_b.run(output_a)``).
+    2. Graph/builder edges — ``StateGraph().add_node(...).add_edge(a, b)``
+       (LangGraph, Microsoft Agent Framework, AutoGen) or
+       ``pipeline.connect(sender, receiver)`` (Haystack).
+    3. List-composition — ``Crew(agents=[...])``, ``RoundRobinGroupChat(
+       participants=[...])``, ``Agent(sub_agents=[...])``,
+       ``HandoffOrchestration(members=...)``.
 
     For each handover, checks whether a Pre-Node (validation/authorization/
     schema/approval) guards the receiving call — i.e. fires BEFORE the
@@ -1373,6 +1394,150 @@ class AgentHandoverAnalyser:
         for node in ast.walk(tree):
             if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 handovers.extend(self._scan_body(node.body, lines, filepath))
+        handovers.extend(self._detect_graph_edges(tree, lines, filepath))
+        handovers.extend(self._detect_list_composition(tree, lines, filepath))
+        return handovers
+
+    # ── Family 1: graph/builder edges ─────────────────────────────────────
+
+    def _chain_has_graph_builder_root(self, node) -> bool:
+        """
+        Does this (possibly fluent-chained) expression originate from a
+        recognised graph-builder constructor, e.g.
+        ``StateGraph().add_node(...).add_edge(...)``?
+        """
+        while True:
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id in _GRAPH_BUILDER_CONSTRUCTORS:
+                    return True
+                if isinstance(func, ast.Attribute):
+                    node = func.value
+                    continue
+                return False
+            if isinstance(node, ast.Attribute):
+                node = node.value
+                continue
+            return False
+
+    def _collect_graph_builder_vars(self, tree: ast.AST) -> set:
+        """Variables assigned the result of a recognised graph-builder
+        constructor — e.g. ``workflow = StateGraph(AgentState)``."""
+        names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                if self._chain_has_graph_builder_root(node.value):
+                    target = node.targets[0] if node.targets else None
+                    if isinstance(target, ast.Name):
+                        names.add(target.id)
+        return names
+
+    def _literal_or_name(self, node) -> Optional[str]:
+        """Best-effort readable label for an AST expression: a string
+        constant's value, a bare name's identifier, or (for an inline
+        constructor call like ``Agent(name="x")``) its name/role keyword —
+        falling back to ``ast.unparse`` for anything else."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Call):
+            for kw in node.keywords:
+                if kw.arg in ("name", "agent_name", "role") and isinstance(kw.value, ast.Constant):
+                    return str(kw.value.value)
+            if isinstance(node.func, (ast.Name, ast.Attribute)):
+                return self._get_call_string(node.func)
+        try:
+            return ast.unparse(node)
+        except Exception:
+            return None
+
+    def _detect_graph_edges(self, tree: ast.AST, lines: list, filepath: str) -> list:
+        graph_vars = self._collect_graph_builder_vars(tree)
+        handovers = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            if node.func.attr not in _GRAPH_EDGE_METHODS:
+                continue
+            root = node.func.value
+            is_graph_call = (
+                self._chain_has_graph_builder_root(node)
+                or (isinstance(root, ast.Name) and root.id in graph_vars)
+            )
+            if not is_graph_call:
+                continue
+            if len(node.args) < 2:
+                continue
+            from_label = self._literal_or_name(node.args[0])
+            to_label = self._literal_or_name(node.args[1])
+            if not from_label or not to_label:
+                continue
+            line_num = getattr(node, "lineno", 0)
+            handovers.append(self._build_handover(
+                {"agent": from_label, "line": line_num}, to_label, "", line_num, lines, filepath,
+            ))
+        return handovers
+
+    # ── Family 2: list-composition ────────────────────────────────────────
+
+    def _collect_assigned_names(self, tree: ast.AST) -> dict:
+        """Map id(call_node) -> assigned variable name, e.g. for
+        ``root_agent = Agent(...)`` maps the Agent(...) call to 'root_agent'.
+        Preferred over the bare constructor name as a more readable label."""
+        assigned = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                target = node.targets[0] if node.targets else None
+                if isinstance(target, ast.Name):
+                    assigned[id(node.value)] = target.id
+        return assigned
+
+    def _collect_list_vars(self, tree: ast.AST) -> dict:
+        """Map variable name -> element nodes for ``agent_list = [a, b, c]``
+        assignments — lets list-composition detection follow one level of
+        same-file variable indirection (assign-then-pass), e.g.
+        ``agents = [a, b]; Crew(agents=agents)``. Does not trace values
+        returned from a function call (e.g. ``agents = get_agents()``) —
+        that needs interprocedural analysis, out of scope here."""
+        lists = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.List):
+                target = node.targets[0] if node.targets else None
+                if isinstance(target, ast.Name):
+                    lists[target.id] = node.value.elts
+        return lists
+
+    def _detect_list_composition(self, tree: ast.AST, lines: list, filepath: str) -> list:
+        assigned_names = self._collect_assigned_names(tree)
+        list_vars = self._collect_list_vars(tree)
+        handovers = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for kw in node.keywords:
+                if kw.arg not in _LIST_COMPOSITION_KEYWORDS:
+                    continue
+                if isinstance(kw.value, ast.List):
+                    elts = kw.value.elts
+                elif isinstance(kw.value, ast.Name) and kw.value.id in list_vars:
+                    elts = list_vars[kw.value.id]
+                else:
+                    continue
+                members = [self._literal_or_name(el) for el in elts]
+                members = [m for m in members if m]
+                if not members:
+                    continue
+                orchestrator = (
+                    assigned_names.get(id(node))
+                    or self._get_call_string(node.func)
+                    or "Orchestrator"
+                )
+                line_num = getattr(node, "lineno", 0)
+                for member in members:
+                    handovers.append(self._build_handover(
+                        {"agent": orchestrator, "line": line_num}, member, "", line_num, lines, filepath,
+                    ))
         return handovers
 
     def _scan_body(self, body: list, lines: list, filepath: str) -> list:
@@ -1451,9 +1616,13 @@ class AgentHandoverAnalyser:
             "pre_node": pre_node,
             "drift_class": None if pre_node_exists else "CLUSTER-HANDOVER + DC-E13",
             "governance_gap": (
-                None if pre_node_exists else
-                f"Agent output ('{data_var}') passed from {source_info['agent']} to "
-                f"{to_agent} without a validation Pre-Node"
+                None if pre_node_exists else (
+                    f"Agent output ('{data_var}') passed from {source_info['agent']} to "
+                    f"{to_agent} without a validation Pre-Node"
+                    if data_var else
+                    f"Handover from {source_info['agent']} to {to_agent} without a "
+                    f"validation Pre-Node"
+                )
             ),
             "severity": "low" if pre_node_exists else "high",
         }
@@ -2826,7 +2995,7 @@ class ScanEngine:
             "scan_date": datetime.now(timezone.utc).isoformat(),
             "repo": str(path),
             "identity_key": identity_key,
-            "verba_version": "0.4.5",
+            "verba_version": "0.4.6",
             "context_profile": self.context_profile,
             "reviewed": False,
             "focus_paths": focus_paths or [],
@@ -3062,7 +3231,12 @@ class ScanEngine:
                     continue
                 if MINIFIED_BUNDLE_RE.search(fn):
                     continue
-                if fn in SKIP_FILENAMES:
+                # SKIP_FILENAMES (setup.py, conftest.py, setup.cfg) are
+                # packaging/test-tooling files at the repo root — a module
+                # that happens to share one of these names deeper in the
+                # tree (e.g. tradingagents/graph/setup.py) is production
+                # code, not build tooling, and must not be skipped.
+                if fn in SKIP_FILENAMES and root_path == path:
                     continue
                 fp = Path(root) / fn
                 if fp.suffix not in SUPPORTED_EXTENSIONS:

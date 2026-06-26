@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.4.6
+
+Multi-agent handover detection — families 1 and 2. `agent_inventory`
+(Agents Detected / Handovers / Chains / Clusters) reported 0 on every real
+multi-agent repo scanned this session because `AgentHandoverAnalyser` only
+recognised one shape (`agent_a.run(x)` -> variable -> `agent_b.run(var)`,
+same function body). Real frameworks build multi-agent systems two other
+ways just as commonly: declaring a graph of edges, or passing a flat list
+of agents into a constructor. Both are now detected, verified empirically
+by re-scanning real repos before/after.
+
+### Added
+
+- **Family 1 — graph/builder edges.** Detects
+  `StateGraph().add_node(...).add_edge(a, b)` (LangGraph),
+  `WorkflowBuilder().add_edge(a, b)` (Microsoft Agent Framework),
+  `pipeline.connect(sender, receiver)` (Haystack), and `DiGraphBuilder`
+  (AutoGen) — both the fluent-chained form and the assign-then-call form
+  (`workflow = StateGraph(...); workflow.add_edge(a, b)`). Each `add_edge`/
+  `connect` call becomes a handover edge between the two node labels.
+  Re-scan after fix: `TradingAgents` (a real LangGraph trading-debate
+  pipeline) 0 → 12 agents / 7 handovers / 4 chains / 5 clusters;
+  `azure-trust-agents` (Microsoft Agent Framework) 0 → 4 agents / 12
+  handovers.
+- **Family 2 — list-composition.** Detects `agents=[...]` (CrewAI),
+  `participants=[...]` (AutoGen), `sub_agents=[...]` (Google ADK),
+  `members=[...]` (Semantic Kernel, OpenClaw's own team model) — any
+  constructor keyword from this set whose value is a list, including one
+  level of same-file variable indirection (`agent_list = [a, b];
+  Crew(agents=agent_list)`). Re-scan after fix: a Google ADK sample
+  (`root_agent = Agent(sub_agents=[weather_agent])`) 0 → 2 agents / 1
+  handover; `ClawTeam-OpenClaw`'s own team model (`TeamConfig(members=
+  [leader])`) 0 → 2 agents / 1 handover.
+
+### Fixed — file-walker
+
+- **`SKIP_FILENAMES` (setup.py, conftest.py, setup.cfg) matched by bare
+  filename anywhere in the tree, not just at the repo root.** A module
+  that happens to share one of these names deeper in the tree — e.g.
+  `tradingagents/graph/setup.py`, the actual LangGraph workflow
+  construction file, the single most relevant file in that repo for this
+  exact feature — was being skipped as if it were build tooling. Now only
+  applied to files at the scanned repo's own root.
+
+### Known limitations (not fixed in this release)
+
+- List-composition detection does not trace a constructor keyword's value
+  through a function call — `agents, handoffs = get_agents()` followed by
+  `HandoffOrchestration(members=agents, ...)` is not detected, since the
+  actual list literal lives inside `get_agents()`'s return statement, one
+  function away. Same limitation class as the dict-unpacking case below.
+  Confirmed on Semantic Kernel's own `step4_handoff.py` example.
+- Constructor keywords built via `**kwargs` dict-unpacking are not
+  detected — `Crew(*args, **crew_params)` where `crew_params["agents"]`
+  is assigned earlier gives no literal `agents=` keyword in the AST for
+  this detector to see. Confirmed on `CrewAI-Studio`'s real `my_crew.py`.
+  Both of these would need interprocedural/dataflow tracing, a
+  meaningfully larger feature than this release's scope.
+- JS/TS support, family 1's `add_conditional_edges` variant and Mastra's
+  `.step()`/`.then()` chain form, families 3-9, and the IaC-declared
+  variant (AWS Bedrock Agents' `agent_collaborators=` in a CDK stack) are
+  not yet implemented — scheduled for follow-up releases per the
+  implementation order in `.claude/skills/agent-handover-detection`.
+
 ## 0.4.5
 
 File-walker fixes. All four were found by reading `_collect_files()` and
