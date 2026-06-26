@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+Multi-agent handover detection — family 8 (team registry + publish/
+subscribe messaging). The first family whose handover signature spans
+*multiple files* — every confirmed real example splits the publish half
+and the subscribe half across separate files, so this runs as a
+repo-wide pass (`_detect_pubsub_messaging`), not a per-file detector like
+every other family.
+
+### Added
+
+- **MetaGPT (Python)** — `Environment.publish_message(message)` (a
+  distribution method) paired with `Role._watch(actions)` /
+  `Role.set_addresses(addresses)` (per-agent subscription filters),
+  confirmed split across 3 files (`team.py`, `environment/base_env.py`,
+  `roles/role.py`). Re-scan after fix: 0 → 2 agents / 1 handover.
+- **open-agent-sdk-typescript (JS/TS)** — a `TeamCreateTool`/
+  `SendMessageTool` tool-definition pair, identified by their literal
+  `name: 'TeamCreate'`/`name: 'SendMessage'` values, confirmed split
+  across 2 files (`team-tools.ts`, `send-message.ts`). Re-scan after fix:
+  3 → 5 agents / 2 → 3 handovers (additive on top of family 7, already
+  detected in the same repo).
+
+No regressions — AI-integration counts unchanged across a 10-repo
+regression sweep; no false positives on repos without this pattern.
+
+---
+
 Multi-agent handover detection — family 4 (protocol/server). The first
 family with no in-process call chain at all — a client object calling a
 remotely, independently-deployed agent/workflow over a network boundary.

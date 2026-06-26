@@ -1403,6 +1403,18 @@ _JS_RECORD_KEY_RE = re.compile(r'^\s{2,4}["\']?(\w+)["\']?\s*:\s*\{', re.MULTILI
 _DELEGATION_TOOL_NAMES = {"delegate_task", "delegate_agent", "spawn_agent", "spawn_subagent"}
 _DEPTH_PARAM_RE = re.compile(r'\b(max_spawn_depth|spawn_depth|max_depth|child_depth)\b')
 
+# Family 8 (team registry + publish/subscribe messaging): the handover
+# signature is a publish + subscribe PAIR of definitions, not a call site —
+# and confirmed real examples split that pair across multiple files
+# (MetaGPT: Environment.publish_message in one file, Role._watch/
+# set_addresses in another; open-agent-sdk-typescript: TeamCreateTool and
+# SendMessageTool in separate files). Detected as a repo-wide pass, not a
+# per-file detector, since neither half alone is the signature.
+_PUBLISH_METHOD_NAMES = {"publish_message"}
+_SUBSCRIBE_METHOD_NAMES = {"_watch", "set_addresses"}
+_JS_TEAM_TOOL_NAME_RE = re.compile(r"""name\s*:\s*['"]TeamCreate['"]""")
+_JS_SEND_MESSAGE_TOOL_NAME_RE = re.compile(r"""name\s*:\s*['"]SendMessage['"]""")
+
 # Constructor keyword arguments whose value is a list of agents — the
 # list-composition family (CrewAI's agents=, AutoGen's participants=,
 # Google ADK's sub_agents=, Semantic Kernel's members=) AND family 6's
@@ -1995,6 +2007,72 @@ class ClusterGovernanceAnalyser:
                 })
 
         return cluster_gaps
+
+
+def _build_pubsub_handover(from_agent: str, from_location: str, to_agent: str, to_location: str) -> dict:
+    return {
+        "from_agent": from_agent,
+        "to_agent": to_agent,
+        "from_location": from_location,
+        "location": to_location,
+        "data_passed": "",
+        "input_validation": False,
+        "output_validation": False,
+        "pre_node_exists": False,
+        "pre_node": None,
+        "drift_class": "CLUSTER-HANDOVER + DC-E13",
+        "governance_gap": (
+            f"Publish/subscribe handover from {from_agent} to {to_agent} "
+            f"without a validation Pre-Node"
+        ),
+        "severity": "high",
+    }
+
+
+def _detect_pubsub_messaging(parsed: list) -> list:
+    """
+    Pass 4 (repo-wide) — family 8: team registry + publish/subscribe
+    messaging. Unlike every other handover family, the signature is a
+    publish + subscribe PAIR of definitions, and confirmed real examples
+    split that pair across multiple files — so this runs once over the
+    whole repo's parsed files, not per-file like the rest of
+    AgentHandoverAnalyser.
+    """
+    publish_loc = subscribe_loc = team_loc = send_loc = None
+
+    for file_data in parsed:
+        if file_data["extension"] == ".py" and (publish_loc is None or subscribe_loc is None):
+            try:
+                tree = _ast_parse_quiet(file_data["content"], str(file_data["path"]))
+            except (SyntaxError, ValueError, RecursionError):
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if publish_loc is None and node.name in _PUBLISH_METHOD_NAMES:
+                    publish_loc = f"{file_data['path']}:{getattr(node, 'lineno', 0)}"
+                elif subscribe_loc is None and node.name in _SUBSCRIBE_METHOD_NAMES:
+                    subscribe_loc = f"{file_data['path']}:{getattr(node, 'lineno', 0)}"
+
+        elif file_data["extension"] in (".js", ".ts", ".jsx", ".tsx") and (team_loc is None or send_loc is None):
+            content = file_data["content"]
+            if team_loc is None:
+                m = _JS_TEAM_TOOL_NAME_RE.search(content)
+                if m:
+                    line_num = content[:m.start()].count("\n") + 1
+                    team_loc = f"{file_data['path']}:{line_num}"
+            if send_loc is None:
+                m = _JS_SEND_MESSAGE_TOOL_NAME_RE.search(content)
+                if m:
+                    line_num = content[:m.start()].count("\n") + 1
+                    send_loc = f"{file_data['path']}:{line_num}"
+
+    handovers = []
+    if publish_loc and subscribe_loc:
+        handovers.append(_build_pubsub_handover("Environment", publish_loc, "<subscribed roles>", subscribe_loc))
+    if team_loc and send_loc:
+        handovers.append(_build_pubsub_handover("TeamCreate", team_loc, "<message recipients>", send_loc))
+    return handovers
 
 
 def _detect_terminal_states(decision_points: list) -> list:
@@ -3325,6 +3403,11 @@ class ScanEngine:
 
             t2 = progress.add_task("Pass 2 — Detecting AI integrations (AST)...", total=None)
             primitives = self._detect_primitives(parsed, path)
+            try:
+                primitives["agent_handovers"].extend(_detect_pubsub_messaging(parsed))
+            except Exception as e:
+                if self.verbose:
+                    console.print(f"[dim]Pub/sub handover scan error: {e}[/dim]")
             results["primitives"] = primitives
             results["language_coverage"] = _compute_language_coverage(parsed)
             progress.update(t2, completed=True)
