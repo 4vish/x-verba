@@ -2,11 +2,156 @@
 
 **Find the places where your code makes consequential decisions with no safeguards. Before they become failures.**
 
-X-Verba scans your codebase for **governance gaps** — places where your system commits to something irreversible (AI calls, payments, database writes, deployments, agent handovers) without adequate checks, validation, approval gates, or audit trails.
+**VERBA** stands for **Verifiable Behaviour Architecture** — a framework for identifying where systems make consequential decisions without adequate safeguards. X-Verba is the static-analysis CLI that applies it to your code: it scans your codebase for **governance gaps** — places where your system commits to something irreversible (AI calls, payments, database writes, deployments, agent handovers) without adequate checks, validation, approval gates, or audit trails.
 
-**Language support:**
-- ✅ **Full analysis** (decision points, AI-call detection, Gamma, all findings): **Python, JavaScript/TypeScript (incl. JSX/TSX), Go, Rust, C#**
-- ⚠️ **Files counted, not analyzed** (contribute nothing to Gamma or findings): **Java, Ruby, PHP** — see [Language Support](#language-support) for what this means before trusting a scan on these codebases.
+---
+
+## What We Support
+
+[![Python](https://img.shields.io/badge/Python-supported-3776AB?logo=python&logoColor=white)](https://github.com/python/cpython)
+[![JavaScript](https://img.shields.io/badge/JavaScript-supported-F7DF1E?logo=javascript&logoColor=black)](https://github.com/tc39/ecma262)
+[![TypeScript](https://img.shields.io/badge/TypeScript-supported-3178C6?logo=typescript&logoColor=white)](https://github.com/microsoft/TypeScript)
+[![Go](https://img.shields.io/badge/Go-supported-00ADD8?logo=go&logoColor=white)](https://github.com/golang/go)
+[![Rust](https://img.shields.io/badge/Rust-supported-000000?logo=rust&logoColor=white)](https://github.com/rust-lang/rust)
+[![C#](https://img.shields.io/badge/C%23-supported-239120?logo=csharp&logoColor=white)](https://github.com/dotnet/csharp)
+
+### Detailed Language Support
+
+| Language(s) | Decision points, AI-call detection, Gamma | Agent-handover detection |
+|---|---|---|
+| Python | ✅ Full AST-based analysis | ✅ |
+| JavaScript / TypeScript (incl. JSX/TSX) | ✅ Full pattern-based analysis | ✅ |
+| Go, Rust, C# | ✅ Full pattern-based analysis | — |
+| Java, Ruby, PHP | ⚠️ Files counted, not analyzed — contribute nothing to Gamma, coverage, or findings | — |
+
+### AI Provider / LLM SDK Detection
+
+X-Verba recognizes AI calls from the official SDK of each provider below — via
+import analysis in Python, call-pattern matching in JS/TS, and (as a fallback,
+only when nothing else matches) a known-hostname check for raw HTTP calls with
+no SDK at all.
+
+[![OpenAI](https://img.shields.io/badge/OpenAI-supported-412991?logo=openai&logoColor=white)](https://github.com/openai/openai-python)
+[![Anthropic](https://img.shields.io/badge/Anthropic-supported-D4A27F?logo=anthropic&logoColor=white)](https://github.com/anthropics/anthropic-sdk-python)
+[![Google Gemini](https://img.shields.io/badge/Google_Gemini-supported-4285F4?logo=google&logoColor=white)](https://github.com/googleapis/python-genai)
+[![Cohere](https://img.shields.io/badge/Cohere-supported-39594D)](https://github.com/cohere-ai/cohere-python)
+[![AWS Bedrock](https://img.shields.io/badge/AWS_Bedrock-supported-FF9900?logo=amazonwebservices&logoColor=white)](https://github.com/boto/boto3)
+[![Mistral](https://img.shields.io/badge/Mistral-supported-FA520F)](https://github.com/mistralai/client-python)
+[![Groq](https://img.shields.io/badge/Groq-supported-F55036)](https://github.com/groq/groq-python)
+[![Perplexity](https://img.shields.io/badge/Perplexity-supported-1FB8CD)](https://github.com/ppl-ai/api-discussion)
+[![Fireworks AI](https://img.shields.io/badge/Fireworks_AI-supported-6E56CF)](https://github.com/fw-ai/fireworks-python)
+[![DeepSeek](https://img.shields.io/badge/DeepSeek-supported-536AF5)](https://github.com/deepseek-ai/DeepSeek-V3)
+[![xAI](https://img.shields.io/badge/xAI-supported-000000)](https://github.com/xai-org/xai-sdk-python)
+[![OpenRouter](https://img.shields.io/badge/OpenRouter-supported-6467F2)](https://github.com/OpenRouterTeam/openrouter-runner)
+[![Together AI](https://img.shields.io/badge/Together_AI-supported-0F6FFF)](https://github.com/togethercomputer/together-python)
+[![Replicate](https://img.shields.io/badge/Replicate-supported-000000)](https://github.com/replicate/replicate-python)
+[![Hugging Face](https://img.shields.io/badge/Hugging_Face-supported-FFD21E?logo=huggingface&logoColor=black)](https://github.com/huggingface/transformers)
+[![Meta Llama](https://img.shields.io/badge/Meta_Llama-supported-0467DF)](https://github.com/meta-llama/llama-stack-client-python)
+
+### Agentic Framework Support
+
+X-Verba detects multi-agent **handovers** (`agent_inventory` — agents, handover
+edges, chains, clusters) for the frameworks below, grouped by the structural
+pattern each one uses. A framework can appear in more than one group — several
+ship multiple coordination APIs in the same codebase (AutoGen and Semantic
+Kernel both do). Every entry was verified against that framework's own real
+source code, not inferred from documentation.
+
+**Graph / builder edges** — `add_node()` / `add_edge()` (or an equivalent fluent edge-builder) declaring a directed graph of agents/steps.
+
+[![LangGraph](https://img.shields.io/badge/LangGraph-supported-1C3C3C)](https://github.com/langchain-ai/langgraph)
+[![LangGraph.js](https://img.shields.io/badge/LangGraph.js-supported-1C3C3C)](https://github.com/langchain-ai/langgraphjs)
+[![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft_Agent_Framework-supported-00A4EF?logo=microsoft&logoColor=white)](https://github.com/microsoft/agent-framework)
+[![Haystack](https://img.shields.io/badge/Haystack-supported-09C5C1)](https://github.com/deepset-ai/haystack)
+[![AutoGen](https://img.shields.io/badge/AutoGen-supported-00A4EF)](https://github.com/microsoft/autogen)
+[![Mastra](https://img.shields.io/badge/Mastra-supported-000000)](https://github.com/mastra-ai/mastra)
+[![Semantic Kernel](https://img.shields.io/badge/Semantic_Kernel-supported-7B68EE)](https://github.com/microsoft/semantic-kernel)
+[![Swarms](https://img.shields.io/badge/Swarms-supported-FF4500)](https://github.com/kyegomez/swarms)
+
+**List-composition** — a constructor keyword (`agents=`, `participants=`, `sub_agents=`, `members=`) whose value is a flat list of agents.
+
+[![CrewAI](https://img.shields.io/badge/CrewAI-supported-FF5A5F)](https://github.com/crewAIInc/crewAI)
+[![AutoGen](https://img.shields.io/badge/AutoGen-supported-00A4EF)](https://github.com/microsoft/autogen)
+[![Semantic Kernel](https://img.shields.io/badge/Semantic_Kernel-supported-7B68EE)](https://github.com/microsoft/semantic-kernel)
+[![Google ADK](https://img.shields.io/badge/Google_ADK-supported-4285F4?logo=google&logoColor=white)](https://github.com/google/adk-python)
+
+**Dynamic agent spawning** — a tool function recursively spawns a child instance of the same agent, bounded by a depth cap.
+
+[![Hermes](https://img.shields.io/badge/Hermes-supported-8A2BE2)](https://github.com/NousResearch/hermes-agent)
+[![OpenClaw](https://img.shields.io/badge/OpenClaw-supported-D2001A)](https://github.com/openclaw/openclaw)
+[![Omnigent](https://img.shields.io/badge/Omnigent-supported-2E2E2E)](https://github.com/omnigent-ai/omnigent)
+
+**Protocol/server (agent-to-agent)** — a client calls a remotely, independently-deployed agent over a network boundary, no in-process call chain.
+
+[![Google A2A](https://img.shields.io/badge/Google_A2A-supported-4285F4?logo=google&logoColor=white)](https://github.com/google-agentic-commerce/AP2)
+[![CrewAI](https://img.shields.io/badge/CrewAI-supported-FF5A5F)](https://github.com/crewAIInc/crewAI)
+[![LlamaIndex](https://img.shields.io/badge/LlamaIndex-supported-000000)](https://github.com/run-llama/llama-agents)
+
+**Agent-as-tool** — a sub-agent is wrapped inside an ordinary tool definition and handed to a supervisor agent.
+
+[![LangChain.js](https://img.shields.io/badge/LangChain.js-supported-1C3C3C)](https://github.com/langchain-ai/langchainjs)
+[![OpenAI Agents SDK](https://img.shields.io/badge/OpenAI_Agents_SDK-supported-412991?logo=openai&logoColor=white)](https://github.com/openai/openai-agents-python)
+[![Pydantic AI](https://img.shields.io/badge/Pydantic_AI-supported-E92063)](https://github.com/pydantic/pydantic-ai)
+
+**Constructor-keyword handoffs** — a `handoffs=` keyword on the Agent constructor, referencing other Agent instances directly.
+
+[![OpenAI Agents SDK](https://img.shields.io/badge/OpenAI_Agents_SDK-supported-412991?logo=openai&logoColor=white)](https://github.com/openai/openai-agents-python)
+[![Swarms](https://img.shields.io/badge/Swarms-supported-FF4500)](https://github.com/kyegomez/swarms)
+
+**Named subagent registry** — a dict keyed by subagent name on a single options object; the main agent picks one at runtime by intent.
+
+[![Claude Agent SDK](https://img.shields.io/badge/Claude_Agent_SDK-supported-D4A27F?logo=anthropic&logoColor=white)](https://github.com/anthropics/claude-agent-sdk-python)
+[![open-agent-sdk](https://img.shields.io/badge/open--agent--sdk-supported-2E2E2E)](https://github.com/codeany-ai/open-agent-sdk-typescript)
+
+**Pub/sub messaging** — a publish-style distribution method paired with a per-agent subscribe/watch filter, often split across multiple files.
+
+[![MetaGPT](https://img.shields.io/badge/MetaGPT-supported-000000)](https://github.com/FoundationAgents/MetaGPT)
+[![AutoGen](https://img.shields.io/badge/AutoGen-supported-00A4EF)](https://github.com/microsoft/autogen)
+[![open-agent-sdk](https://img.shields.io/badge/open--agent--sdk-supported-2E2E2E)](https://github.com/codeany-ai/open-agent-sdk-typescript)
+
+---
+
+## Table of Contents
+
+- [What It Does (In 30 Seconds)](#what-it-does-in-30-seconds)
+- [Why This Matters](#why-this-matters)
+  - [Scenario 1: Unvalidated Database Writes from AI](#scenario-1-unvalidated-database-writes-from-ai)
+  - [Scenario 2: Agent Escalation Without Limits](#scenario-2-agent-escalation-without-limits)
+  - [Scenario 3: Cluster-Level Governance Failure](#scenario-3-cluster-level-governance-failure)
+  - [Scenario 4: Payment Without Approval](#scenario-4-payment-without-approval)
+  - [Scenario 5: Real-World Precedent — Knight Capital](#scenario-5-real-world-precedent--knight-capital)
+- [What X-Verba Scans For](#what-x-verba-scans-for)
+  - [Category 1: AI Integrations](#category-1-ai-integrations)
+  - [Category 2: Irreversible Actions (in AI-adjacent code)](#category-2-irreversible-actions-in-ai-adjacent-code)
+  - [Category 3: Decision Points](#category-3-decision-points)
+  - [Category 4: Agent Governance Gaps](#category-4-agent-governance-gaps)
+  - [Category 5: Governance Mechanisms Detected](#category-5-governance-mechanisms-detected)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+  - [1. Scan Your Repo](#1-scan-your-repo)
+  - [2. Open the Report](#2-open-the-report)
+  - [3. Fill in Your Governance](#3-fill-in-your-governance)
+  - [4. Verify (CI/CD)](#4-verify-cicd)
+- [Understanding the Gamma Score (Γ)](#understanding-the-gamma-score-γ)
+- [What It Finds (Real Code Examples)](#what-it-finds-real-code-examples)
+  - [Example 1: LLM Output → Database, No Validation](#example-1-llm-output--database-no-validation)
+  - [Example 2: Agent Escalation Without Approval](#example-2-agent-escalation-without-approval)
+  - [Example 3: Multi-Service Cluster Failure](#example-3-multi-service-cluster-failure)
+  - [Example 4: Payment Without Approval Gate](#example-4-payment-without-approval-gate)
+- [File Context Classification](#file-context-classification)
+- [Modes](#modes)
+  - [`x-verba scan`](#x-verba-scan)
+  - [`x-verba qa`](#x-verba-qa)
+  - [`x-verba forensics` (Not yet implemented)](#x-verba-forensics-not-yet-implemented)
+  - [`x-verba prompt` (Not yet implemented)](#x-verba-prompt-not-yet-implemented)
+  - [`x-verba compile` (Not yet implemented)](#x-verba-compile-not-yet-implemented)
+- [Language Support](#language-support)
+- [What X-Verba Does NOT Do](#what-x-verba-does-not-do)
+- [Limitations (Be Honest)](#limitations-be-honest)
+- [Next Steps](#next-steps)
+- [Contributing](#contributing)
+- [License](#license)
+- [About](#about)
 
 ---
 
@@ -620,119 +765,8 @@ Compile governance spec into executable bundle.
 
 ## Language Support
 
-| Language(s) | Decision points, AI-call detection, Gamma | Agent-handover detection |
-|---|---|---|
-| Python | ✅ Full AST-based analysis | ✅ |
-| JavaScript / TypeScript (incl. JSX/TSX) | ✅ Full pattern-based analysis | ✅ |
-| Go, Rust, C# | ✅ Full pattern-based analysis | — |
-| Java, Ruby, PHP | ⚠️ Files counted, not analyzed — contribute nothing to Gamma, coverage, or findings | — |
-
----
-
-## AI Provider / LLM SDK Detection
-
-X-Verba recognizes AI calls from the official SDK of each provider below — via
-import analysis in Python, call-pattern matching in JS/TS, and (as a fallback,
-only when nothing else matches) a known-hostname check for raw HTTP calls with
-no SDK at all.
-
-[![OpenAI](https://img.shields.io/badge/OpenAI-supported-412991?logo=openai&logoColor=white)](https://github.com/openai/openai-python)
-[![Anthropic](https://img.shields.io/badge/Anthropic-supported-D4A27F?logo=anthropic&logoColor=white)](https://github.com/anthropics/anthropic-sdk-python)
-[![Google Gemini](https://img.shields.io/badge/Google_Gemini-supported-4285F4?logo=google&logoColor=white)](https://github.com/googleapis/python-genai)
-[![Cohere](https://img.shields.io/badge/Cohere-supported-39594D)](https://github.com/cohere-ai/cohere-python)
-[![AWS Bedrock](https://img.shields.io/badge/AWS_Bedrock-supported-FF9900?logo=amazonwebservices&logoColor=white)](https://github.com/boto/boto3)
-[![Mistral](https://img.shields.io/badge/Mistral-supported-FA520F)](https://github.com/mistralai/client-python)
-[![Groq](https://img.shields.io/badge/Groq-supported-F55036)](https://github.com/groq/groq-python)
-[![Perplexity](https://img.shields.io/badge/Perplexity-supported-1FB8CD)](https://github.com/ppl-ai/api-discussion)
-[![Fireworks AI](https://img.shields.io/badge/Fireworks_AI-supported-6E56CF)](https://github.com/fw-ai/fireworks-python)
-[![DeepSeek](https://img.shields.io/badge/DeepSeek-supported-536AF5)](https://github.com/deepseek-ai/DeepSeek-V3)
-[![xAI](https://img.shields.io/badge/xAI-supported-000000)](https://github.com/xai-org/xai-sdk-python)
-[![OpenRouter](https://img.shields.io/badge/OpenRouter-supported-6467F2)](https://github.com/OpenRouterTeam/openrouter-runner)
-[![Together AI](https://img.shields.io/badge/Together_AI-supported-0F6FFF)](https://github.com/togethercomputer/together-python)
-[![Replicate](https://img.shields.io/badge/Replicate-supported-000000)](https://github.com/replicate/replicate-python)
-[![Hugging Face](https://img.shields.io/badge/Hugging_Face-supported-FFD21E?logo=huggingface&logoColor=black)](https://github.com/huggingface/transformers)
-[![Meta Llama](https://img.shields.io/badge/Meta_Llama-supported-0467DF)](https://github.com/meta-llama/llama-stack-client-python)
-
----
-
-## Agentic Framework Support
-
-X-Verba detects multi-agent **handovers** (`agent_inventory` — agents, handover
-edges, chains, clusters) for the frameworks below, grouped by the structural
-pattern each one uses. A framework can appear in more than one group — several
-ship multiple coordination APIs in the same codebase (AutoGen and Semantic
-Kernel both do). Every entry was verified against that framework's own real
-source code, not inferred from documentation.
-
-### Graph / builder edges
-`add_node()` / `add_edge()` (or an equivalent fluent edge-builder) declaring a
-directed graph of agents/steps.
-
-[![LangGraph](https://img.shields.io/badge/LangGraph-supported-1C3C3C)](https://github.com/langchain-ai/langgraph)
-[![LangGraph.js](https://img.shields.io/badge/LangGraph.js-supported-1C3C3C)](https://github.com/langchain-ai/langgraphjs)
-[![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft_Agent_Framework-supported-00A4EF?logo=microsoft&logoColor=white)](https://github.com/microsoft/agent-framework)
-[![Haystack](https://img.shields.io/badge/Haystack-supported-09C5C1)](https://github.com/deepset-ai/haystack)
-[![AutoGen](https://img.shields.io/badge/AutoGen-supported-00A4EF)](https://github.com/microsoft/autogen)
-[![Mastra](https://img.shields.io/badge/Mastra-supported-000000)](https://github.com/mastra-ai/mastra)
-[![Semantic Kernel](https://img.shields.io/badge/Semantic_Kernel-supported-7B68EE)](https://github.com/microsoft/semantic-kernel)
-[![Swarms](https://img.shields.io/badge/Swarms-supported-FF4500)](https://github.com/kyegomez/swarms)
-
-### List-composition
-A constructor keyword (`agents=`, `participants=`, `sub_agents=`, `members=`)
-whose value is a flat list of agents.
-
-[![CrewAI](https://img.shields.io/badge/CrewAI-supported-FF5A5F)](https://github.com/crewAIInc/crewAI)
-[![AutoGen](https://img.shields.io/badge/AutoGen-supported-00A4EF)](https://github.com/microsoft/autogen)
-[![Semantic Kernel](https://img.shields.io/badge/Semantic_Kernel-supported-7B68EE)](https://github.com/microsoft/semantic-kernel)
-[![Google ADK](https://img.shields.io/badge/Google_ADK-supported-4285F4?logo=google&logoColor=white)](https://github.com/google/adk-python)
-
-### Dynamic agent spawning
-A tool function recursively spawns a child instance of the same agent,
-bounded by a depth cap.
-
-[![Hermes](https://img.shields.io/badge/Hermes-supported-8A2BE2)](https://github.com/NousResearch/hermes-agent)
-[![OpenClaw](https://img.shields.io/badge/OpenClaw-supported-D2001A)](https://github.com/openclaw/openclaw)
-[![Omnigent](https://img.shields.io/badge/Omnigent-supported-2E2E2E)](https://github.com/omnigent-ai/omnigent)
-
-### Protocol/server (agent-to-agent)
-A client calls a remotely, independently-deployed agent over a network
-boundary — no in-process call chain.
-
-[![Google A2A](https://img.shields.io/badge/Google_A2A-supported-4285F4?logo=google&logoColor=white)](https://github.com/google-agentic-commerce/AP2)
-[![CrewAI](https://img.shields.io/badge/CrewAI-supported-FF5A5F)](https://github.com/crewAIInc/crewAI)
-[![LlamaIndex](https://img.shields.io/badge/LlamaIndex-supported-000000)](https://github.com/run-llama/llama-agents)
-
-### Agent-as-tool
-A sub-agent is wrapped inside an ordinary tool definition and handed to a
-supervisor agent.
-
-[![LangChain.js](https://img.shields.io/badge/LangChain.js-supported-1C3C3C)](https://github.com/langchain-ai/langchainjs)
-[![OpenAI Agents SDK](https://img.shields.io/badge/OpenAI_Agents_SDK-supported-412991?logo=openai&logoColor=white)](https://github.com/openai/openai-agents-python)
-[![Pydantic AI](https://img.shields.io/badge/Pydantic_AI-supported-E92063)](https://github.com/pydantic/pydantic-ai)
-
-### Constructor-keyword handoffs
-A `handoffs=` keyword on the Agent constructor, referencing other Agent
-instances directly.
-
-[![OpenAI Agents SDK](https://img.shields.io/badge/OpenAI_Agents_SDK-supported-412991?logo=openai&logoColor=white)](https://github.com/openai/openai-agents-python)
-[![Swarms](https://img.shields.io/badge/Swarms-supported-FF4500)](https://github.com/kyegomez/swarms)
-
-### Named subagent registry
-A dict keyed by subagent name on a single options object — the main agent
-picks one at runtime by intent.
-
-[![Claude Agent SDK](https://img.shields.io/badge/Claude_Agent_SDK-supported-D4A27F?logo=anthropic&logoColor=white)](https://github.com/anthropics/claude-agent-sdk-python)
-[![open-agent-sdk](https://img.shields.io/badge/open--agent--sdk-supported-2E2E2E)](https://github.com/codeany-ai/open-agent-sdk-typescript)
-
-### Pub/sub messaging
-A publish-style distribution method paired with a per-agent subscribe/watch
-filter — often split across multiple files.
-
-[![MetaGPT](https://img.shields.io/badge/MetaGPT-supported-000000)](https://github.com/FoundationAgents/MetaGPT)
-[![AutoGen](https://img.shields.io/badge/AutoGen-supported-00A4EF)](https://github.com/microsoft/autogen)
-[![open-agent-sdk](https://img.shields.io/badge/open--agent--sdk-supported-2E2E2E)](https://github.com/codeany-ai/open-agent-sdk-typescript)
-
----
+For the detailed per-language breakdown of what gets full analysis vs. what's
+just counted, see [Language Support](#detailed-language-support) below.
 
 ## What X-Verba Does NOT Do
 
@@ -755,21 +789,6 @@ filter — often split across multiple files.
 4. **Decision-Making Required** — X-Verba tells you where the gaps are. You decide what governance makes sense for your context.
 
 5. **Not a Validator** — Finding a governance gap ≠ actual vulnerability. You must validate and make the call.
-
----
-
-## Real-World Metrics
-
-Scans of production open-source agent frameworks (v0.2):
-- **LangGraph** (5k+ stars) — Γ = 0.0 (no governance structure)
-- **CrewAI** (18k+ stars) — Γ = 0.0
-- **Dify** (35k+ stars) — Γ = 0.0
-- **MetaGPT** (40k+ stars) — Γ = 0.0
-- **AutoGen** (27k+ stars) — Γ = 0.0
-- **OpenClaw** (emerging) — Γ = 0.0
-- **Anthropic SDK** (official) — Γ = 0.0
-
-Not because these are poorly built. Because **governance at the code level is not yet a standard practice anywhere in the AI ecosystem.**
 
 ---
 
