@@ -1,8 +1,17 @@
+<p align="center">
+  <img src="assets/x-verba-logo.png" alt="X-Verba" width="240"/>
+</p>
+
+<p align="center">
+  <sub>powered by</sub><br/>
+  <img src="assets/super-semantics-logo.png" alt="Super Semantics" width="120"/>
+</p>
+
 # X-Verba — Governance Scanning for Code
 
 **Find the places where your code makes consequential decisions with no safeguards. Before they become failures.**
 
-**VERBA** stands for **Verifiable Behaviour Architecture** — a framework for identifying where systems make consequential decisions without adequate safeguards. X-Verba is the static-analysis CLI that applies it to your code: it scans your codebase for **governance gaps** — places where your system commits to something irreversible (AI calls, payments, database writes, deployments, agent handovers) without adequate checks, validation, approval gates, or audit trails.
+**VERBA** stands for **Verifiable Behaviour Architecture** — a research framework for making structural governance of system behaviour computable, covering governance, drift, and stabilisation in complex systems. X-Verba is the static-analysis CLI that operationalizes one part of it: it scans your codebase for **governance gaps** — places where your system commits to something irreversible (AI calls, payments, database writes, deployments, agent handovers) without adequate checks, validation, approval gates, or audit trails.
 
 ---
 
