@@ -784,6 +784,8 @@ just counted, see [Language Support](#detailed-language-support) below.
 
 5. **Not a Validator** — Finding a governance gap ≠ actual vulnerability. You must validate and make the call.
 
+6. **Some directories are skipped by default** — `examples/`, `tests/`, `test/`, `docs/`, `cookbook/`, `demos/`, `samples/`, `benchmarks/`, `fixtures/`, `mocks/`, `notebooks/`, `tutorials/`, and a few build/dependency folders (`node_modules/`, `.venv/`, `dist/`, `build/`, etc.) are never scanned, on the assumption that they aren't production code. This is usually what you want — but it means scanning a *library's own repository* (rather than a project that *uses* that library) can under-report or show zero findings, since a library's real usage demonstrations typically live in its `examples/` folder, not in its own implementation source. If you need to scan one of these directories anyway, point `--focus` directly at it (e.g. `x-verba scan . --focus examples/`) — `--focus` always overrides the default skip list.
+
 ---
 
 ## Next Steps
