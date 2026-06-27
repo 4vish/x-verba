@@ -64,9 +64,7 @@ source code, not inferred from documentation.
 [![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft_Agent_Framework-supported-00A4EF?logo=microsoft&logoColor=white)](https://github.com/microsoft/agent-framework)
 [![Haystack](https://img.shields.io/badge/Haystack-supported-09C5C1)](https://github.com/deepset-ai/haystack)
 [![AutoGen](https://img.shields.io/badge/AutoGen-supported-00A4EF)](https://github.com/microsoft/autogen)
-[![Mastra](https://img.shields.io/badge/Mastra-supported-000000)](https://github.com/mastra-ai/mastra)
 [![Semantic Kernel](https://img.shields.io/badge/Semantic_Kernel-supported-7B68EE)](https://github.com/microsoft/semantic-kernel)
-[![Swarms](https://img.shields.io/badge/Swarms-supported-FF4500)](https://github.com/kyegomez/swarms)
 
 **List-composition** — a constructor keyword (`agents=`, `participants=`, `sub_agents=`, `members=`) whose value is a flat list of agents.
 
