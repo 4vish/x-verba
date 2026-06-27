@@ -1,10 +1,9 @@
 <p align="center">
-  <img src="assets/x-verba-logo.png" alt="X-Verba" width="240"/>
+  <img src="assets/x-verba-logo.png" alt="X-Verba" width="420"/>
 </p>
-
 <p align="center">
   <sub>powered by</sub><br/>
-  <img src="assets/super-semantics-logo.png" alt="Super Semantics" width="120"/>
+  <img src="assets/super-semantics-logo.png" alt="Super Semantics" width="100"/>
 </p>
 
 # X-Verba — Governance Scanning for Code
