@@ -35,9 +35,9 @@ system_identity:
   governance_authority: null
   identity_key: gogcli-976e866c
   reviewed: false
-  scan_date: '2026-06-20T06:12:11.024869+00:00'
+  scan_date: '2026-06-27T21:31:03.622982+00:00'
   system_name: null
-  verba_version: 0.4.0
+  verba_version: 0.5.0
   version: null
 
 # ───────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ scan_summary:
     medium: 0
     total: 1
   governance_status: BELOW_THRESHOLD
-  structural_gamma_proxy: 0.10540059347181009
+  structural_gamma_proxy: 0.08
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 3 — GOVERNANCE NODES
@@ -198,27 +198,7 @@ terminal_states:
 # ───────────────────────────────────────────────────────────────
 
 drift_class_candidates:
-- DC-FINDING-001:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (file_system) with no authorisation gate
-      — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: internal\backup\gmail\planner.go:76
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
+- note: No Drift Class candidates detected.
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 9b — DRIFT CLASS DETECTION (LEGION ANALYSIS)
@@ -246,22 +226,21 @@ legion_matches:
 governance_intelligence:
   coverage_by_consequence_type:
     database: 0.0
-    external_api: 36.36363636363637
-    file_system: 100.0
+    external_api: 9.090909090909092
+    file_system: 0.0
   coverage_by_decision_type:
-    conditional_branch: 10.154982879798162
-    function_call: 43.333333333333336
-    loop: 14.256515074092999
-    ternary: 50.0
-    try_except: 9.195402298850574
+    conditional_branch: 8.333333333333332
+    function_call: 100.0
+    loop: 0.0
+    try_except: 0.0
   critical_decision_coverage_percent: 0.0
   gamma_agent_handover: 0.0
   gamma_critical: 0.0
-  overall_governance_coverage_percent: 10.540989441214855
+  overall_governance_coverage_percent: 7.6923076923076925
   pre_node_proximity: CRITICAL (>50% of critical decisions ungoverned)
-  structural_gamma_overall: 0.10540059347181009
+  structural_gamma_overall: 0.08
   t_amplification_active: false
-  tendency_score: 61.54837703167635
+  tendency_score: 3.0056922529362913
   tendency_state: failure
 
 # ───────────────────────────────────────────────────────────────
@@ -295,10 +274,10 @@ agent_governance:
 
 critical_decisions:
   critical_path:
-  - internal\cmd\comment_ops.go:82
+  - internal\cmd\comment_ops.go:79
   - internal\cmd\comment_ops.go:89
   - internal\cmd\comment_ops.go:98
-  critical_ungoverned: 17
+  critical_ungoverned: 24
   most_influential:
   - criticality: 0.5
     governed: false
@@ -320,7 +299,7 @@ critical_decisions:
     governed: false
     location: internal\cmd\classroom_helpers.go:187
     pagerank: 2.403560830860534e-05
-  total_critical: 17
+  total_critical: 24
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 13 — GOVERNANCE SCORE
@@ -330,15 +309,15 @@ critical_decisions:
 # ───────────────────────────────────────────────────────────────
 
 structural_gamma:
-  governed_decision_points: 1776
-  interpretation: Only 11% of decision points are governed. The system is structurally
+  governed_decision_points: 2
+  interpretation: Only 8% of decision points are governed. The system is structurally
     ungoverned. The Drift Node is the global energy minimum.
   note: Structural proxy only — not runtime Gamma. Measures whether governance mechanisms
     are structurally present.
   status: BELOW_THRESHOLD
   threshold: 0.9
-  total_decision_points: 16850
-  value: 0.10540059347181009
+  total_decision_points: 26
+  value: 0.08
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 14 — NEXT STEPS

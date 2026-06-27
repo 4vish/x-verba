@@ -3,17 +3,17 @@ X-VERBA SCAN RESULTS
 ════════════════════════════════════════════════════════════════════════════════
 
 Repository:  C:\Users\OEM\AppData\Local\GitHubDesktop\app-3.5.12\gogcli
-Scan Date:   2026-06-20T06:12:11.024869+00:00
+Scan Date:   2026-06-27T21:31:03.622982+00:00
 
 ════════════════════════════════════════════════════════════════════════════════
 GOVERNANCE SCORECARD
 ════════════════════════════════════════════════════════════════════════════════
 
-Structural Gamma:                  0.11 / 1.0  [BELOW_THRESHOLD]
-  (11% of governance-relevant decision points have an observable governance checkpoint.)
-  ├─ Total Decision Points:        16850
-  ├─ Governed Decision Points:     1776 (11%)
-  └─ Ungoverned Decision Points:   15074 (89%)
+Structural Gamma:                  0.08 / 1.0  [BELOW_THRESHOLD]
+  (8% of governance-relevant decision points have an observable governance checkpoint.)
+  ├─ Total Decision Points:        26
+  ├─ Governed Decision Points:     2 (8%)
+  └─ Ungoverned Decision Points:   24 (92%)
 
 Tendency State:                     FAILURE
   ├─ T-Amplification Active:       No (10 high-centrality ungoverned decisions)
@@ -56,12 +56,12 @@ DECISION VISIBILITY
 Decision Points Detected:            16850
   ├─ Low Consequence          0 (0%)
   ├─ Medium Consequence       0 (0%)
-  ├─ High Consequence         16833 (100%)
-  └─ Critical Consequence     17 (0%)
+  ├─ High Consequence         16826 (100%)
+  └─ Critical Consequence     24 (0%)
 
 Governance by Consequence Type:
-  ├─ external_api_call (22):  8 governed, 14 ungoverned
-  ├─ file_write (2):  1 governed, 1 ungoverned
+  ├─ external_api_call (22):  2 governed, 20 ungoverned
+  ├─ file_write (2):  0 governed, 2 ungoverned
   ├─ database_write (1):  0 governed, 1 ungoverned
   └─ database_delete (1):  0 governed, 1 ungoverned
 
@@ -73,22 +73,21 @@ Decision Influence Ranking (PageRank):
 GOVERNANCE COVERAGE
 ════════════════════════════════════════════════════════════════════════════════
 
-Overall Coverage:                    11%
+Overall Coverage:                    8%
 
 Coverage by Decision Type:
-  ├─ conditional_branch       10%
-  ├─ function_call            43%
-  ├─ loop                     14%
-  ├─ ternary                  50%
-  └─ try_except               9%
+  ├─ conditional_branch       8%
+  ├─ function_call            100%
+  ├─ loop                     0%
+  └─ try_except               0%
 
 Coverage by Checkpoint Type:
-  └─ Control Flow             1777 decisions
+  └─ Control Flow             2 decisions
 
 Critical Decision Coverage:
-  ├─ Critical Decisions:           17
+  ├─ Critical Decisions:           24
   ├─ Governed:                     0 (0%)
-  └─ Ungoverned:                   17 (100%)
+  └─ Ungoverned:                   24 (100%)
 
 ════════════════════════════════════════════════════════════════════════════════
 CRITICAL FINDINGS
@@ -104,18 +103,18 @@ CRITICAL FINDINGS
      Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
      Business Impact:     criticality=0.85, governed=False
 
-3. internal\cmd\classroom_courses.go:475
+3. internal\cmd\analytics.go:58
+     Risk:                Decision point (try_except) at internal\cmd\analytics.go:58 leads to a external_api action (irreversible) with a weak Pre-Node guarding it (strength 0.6).
+     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
+     Business Impact:     criticality=0.85, governed=False
+
+4. internal\cmd\classroom_courses.go:475
      Risk:                Decision point (loop) at internal\cmd\classroom_courses.go:475 leads to a external_api action (irreversible) with no Pre-Node guarding it (strength 0.0).
      Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
      Business Impact:     criticality=0.85, governed=False
 
-4. internal\cmd\classroom_courses.go:476
+5. internal\cmd\classroom_courses.go:476
      Risk:                Decision point (conditional_branch) at internal\cmd\classroom_courses.go:476 leads to a external_api action (irreversible) with no Pre-Node guarding it (strength 0.0).
-     Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
-     Business Impact:     criticality=0.85, governed=False
-
-5. internal\cmd\classroom_courses.go:479
-     Risk:                Decision point (conditional_branch) at internal\cmd\classroom_courses.go:479 leads to a external_api action (irreversible) with no Pre-Node guarding it (strength 0.0).
      Recommended Action:  Add or strengthen a Pre-Node (validation/authorization/approval) immediately before this decision point.
      Business Impact:     criticality=0.85, governed=False
 
@@ -123,8 +122,8 @@ CRITICAL FINDINGS
 GOVERNANCE GAPS SUMMARY
 ════════════════════════════════════════════════════════════════════════════════
 
-Critical Governance Gaps:            18
-  ├─ Ungoverned Decision Point    17
+Critical Governance Gaps:            25
+  ├─ Ungoverned Decision Point    24
   └─ Ungated Irreversible Action  1
 
 High Governance Gaps:                0
@@ -132,23 +131,26 @@ Medium Governance Gaps:              0
 
 Agent Handover Gaps:                 0 / 0 ungoverned
 Cluster Governance Gaps:             0
-Terminal States (Silent Failures):   3044
+Terminal States (Silent Failures):   116
+
+════════════════════════════════════════════════════════════════════════════════
+GOVERNANCE THEATRE
+════════════════════════════════════════════════════════════════════════════════
+
+No governance theatre detected.
 
 ════════════════════════════════════════════════════════════════════════════════
 DRIFT CLASS DETECTIONS
 ════════════════════════════════════════════════════════════════════════════════
 
-DC-E14 — Unsanctioned Dependency               1 detection(s)  (STRUCTURAL 1)
-
-Behavioural Domains Affected:
-  └─ External APIs            1 detection(s)
+No drift class detections.
 
 ════════════════════════════════════════════════════════════════════════════════
 GOVERNANCE RECOMMENDATIONS
 ════════════════════════════════════════════════════════════════════════════════
 
 Immediate Actions (Critical): 1 items
-  1. Define what must be confirmed before this action executes. Define what happens if conditions are not met. — internal\backup\gmail\planner.go:76 [DC-E14]
+  1. Define what must be confirmed before this action executes. Define what happens if conditions are not met. — internal\backup\gmail\planner.go:76
 
 Short-term (High): 0 items
   (none)

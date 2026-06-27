@@ -35,9 +35,9 @@ system_identity:
   governance_authority: null
   identity_key: ECC-26000a15
   reviewed: false
-  scan_date: '2026-06-20T19:25:02.758360+00:00'
+  scan_date: '2026-06-27T21:12:51.428080+00:00'
   system_name: null
-  verba_version: 0.4.0
+  verba_version: 0.5.0
   version: null
 
 # ───────────────────────────────────────────────────────────────
@@ -46,15 +46,15 @@ system_identity:
 # ───────────────────────────────────────────────────────────────
 
 scan_summary:
-  ai_integrations_detected: 10
+  ai_integrations_detected: 8
   files_scanned: 282
   findings:
-    critical: 11
-    high: 1
+    critical: 10
+    high: 0
     medium: 6
-    total: 18
+    total: 16
   governance_status: BELOW_THRESHOLD
-  structural_gamma_proxy: 0.23723617497936564
+  structural_gamma_proxy: 0.18
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 3 — GOVERNANCE NODES
@@ -81,19 +81,6 @@ scan_summary:
 
 nodes:
 - NODE-001:
-    candidate_node: AI_OUTPUT_PERSISTED
-    confirmed_node_name: null
-    criticality: null
-    description: null
-    implementation: ecc_dashboard.py:806
-    inference_confidence: MEDIUM
-    input_source: null
-    notes: null
-    output_destination: database write
-    provider: ai_framework
-    streaming: false
-    trigger: path = filedialog.askdirectory(initialdir=self.project_path)
-- NODE-002:
     candidate_node: AI_RESPONSE_GENERATED
     confirmed_node_name: null
     criticality: null
@@ -106,7 +93,7 @@ nodes:
     provider: openai
     streaming: false
     trigger: self.client = OpenAI(api_key=self.api_key, base_url=self.base_url, _enforce_credentials=False)
-- NODE-003:
+- NODE-002:
     candidate_node: AI_OUTPUT_STREAMED
     confirmed_node_name: null
     criticality: null
@@ -119,7 +106,7 @@ nodes:
     provider: openai
     streaming: false
     trigger: response = self.client.chat.completions.create(**params)
-- NODE-004:
+- NODE-003:
     candidate_node: AI_RESPONSE_GENERATED
     confirmed_node_name: null
     criticality: null
@@ -132,7 +119,7 @@ nodes:
     provider: openai
     streaming: false
     trigger: self.client = OpenAI(api_key=self.api_key, base_url=self.base_url, _enforce_credentials=False)
-- NODE-005:
+- NODE-004:
     candidate_node: AI_OUTPUT_STREAMED
     confirmed_node_name: null
     criticality: null
@@ -145,7 +132,7 @@ nodes:
     provider: openai
     streaming: false
     trigger: response = self.client.chat.completions.create(**params)
-- NODE-006:
+- NODE-005:
     candidate_node: AI_OUTPUT_STREAMED
     confirmed_node_name: null
     criticality: null
@@ -159,7 +146,7 @@ nodes:
     streaming: false
     trigger: self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"),
       base_url=base_url)
-- NODE-007:
+- NODE-006:
     candidate_node: AI_OUTPUT_STREAMED
     confirmed_node_name: null
     criticality: null
@@ -172,7 +159,7 @@ nodes:
     provider: ai_framework
     streaming: false
     trigger: response = self.client.messages.create(**params)
-- NODE-008:
+- NODE-007:
     candidate_node: AI_OUTPUT_STREAMED
     confirmed_node_name: null
     criticality: null
@@ -185,7 +172,7 @@ nodes:
     provider: openai
     streaming: false
     trigger: self.client = OpenAI(
-- NODE-009:
+- NODE-008:
     candidate_node: AI_OUTPUT_STREAMED
     confirmed_node_name: null
     criticality: null
@@ -198,19 +185,6 @@ nodes:
     provider: openai
     streaming: false
     trigger: response = self.client.chat.completions.create(**params)
-- NODE-010:
-    candidate_node: AI_OUTPUT_STREAMED
-    confirmed_node_name: null
-    criticality: null
-    description: null
-    implementation: src\llm\tools\executor.py:89
-    inference_confidence: MEDIUM
-    input_source: null
-    notes: null
-    output_destination: downstream processing
-    provider: ai_framework
-    streaming: false
-    trigger: output = self.provider.generate(input_copy)
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 4 — PRE-NODES
@@ -232,11 +206,11 @@ pre_nodes:
     dynamic_prompt: false
     governance_log_on_entry: true
     input_sanitisation_required: null
-    location: ecc_dashboard.py:806
+    location: src\llm\providers\astraflow.py:59
     node_ref: NODE-001
     pre_node_detected_in_code: false
     prompt_boundary_defined: null
-    status: MISSING
+    status: detected
     user_input_in_prompt: false
     what_happens_on_block: null
 - PN-NODE-002:
@@ -245,7 +219,7 @@ pre_nodes:
     dynamic_prompt: false
     governance_log_on_entry: true
     input_sanitisation_required: null
-    location: src\llm\providers\astraflow.py:59
+    location: src\llm\providers\astraflow.py:82
     node_ref: NODE-002
     pre_node_detected_in_code: false
     prompt_boundary_defined: null
@@ -258,7 +232,7 @@ pre_nodes:
     dynamic_prompt: false
     governance_log_on_entry: true
     input_sanitisation_required: null
-    location: src\llm\providers\astraflow.py:82
+    location: src\llm\providers\atlas.py:72
     node_ref: NODE-003
     pre_node_detected_in_code: false
     prompt_boundary_defined: null
@@ -271,7 +245,7 @@ pre_nodes:
     dynamic_prompt: false
     governance_log_on_entry: true
     input_sanitisation_required: null
-    location: src\llm\providers\atlas.py:72
+    location: src\llm\providers\atlas.py:99
     node_ref: NODE-004
     pre_node_detected_in_code: false
     prompt_boundary_defined: null
@@ -284,7 +258,7 @@ pre_nodes:
     dynamic_prompt: false
     governance_log_on_entry: true
     input_sanitisation_required: null
-    location: src\llm\providers\atlas.py:99
+    location: src\llm\providers\claude.py:23
     node_ref: NODE-005
     pre_node_detected_in_code: false
     prompt_boundary_defined: null
@@ -297,7 +271,7 @@ pre_nodes:
     dynamic_prompt: false
     governance_log_on_entry: true
     input_sanitisation_required: null
-    location: src\llm\providers\claude.py:23
+    location: src\llm\providers\claude.py:65
     node_ref: NODE-006
     pre_node_detected_in_code: false
     prompt_boundary_defined: null
@@ -310,7 +284,7 @@ pre_nodes:
     dynamic_prompt: false
     governance_log_on_entry: true
     input_sanitisation_required: null
-    location: src\llm\providers\claude.py:65
+    location: src\llm\providers\openai.py:25
     node_ref: NODE-007
     pre_node_detected_in_code: false
     prompt_boundary_defined: null
@@ -323,34 +297,8 @@ pre_nodes:
     dynamic_prompt: false
     governance_log_on_entry: true
     input_sanitisation_required: null
-    location: src\llm\providers\openai.py:25
-    node_ref: NODE-008
-    pre_node_detected_in_code: false
-    prompt_boundary_defined: null
-    status: detected
-    user_input_in_prompt: false
-    what_happens_on_block: null
-- PN-NODE-009:
-    conditions_that_block_execution: null
-    conditions_that_must_be_true: null
-    dynamic_prompt: false
-    governance_log_on_entry: true
-    input_sanitisation_required: null
     location: src\llm\providers\openai.py:77
-    node_ref: NODE-009
-    pre_node_detected_in_code: false
-    prompt_boundary_defined: null
-    status: detected
-    user_input_in_prompt: false
-    what_happens_on_block: null
-- PN-NODE-010:
-    conditions_that_block_execution: null
-    conditions_that_must_be_true: null
-    dynamic_prompt: false
-    governance_log_on_entry: true
-    input_sanitisation_required: null
-    location: src\llm\tools\executor.py:89
-    node_ref: NODE-010
+    node_ref: NODE-008
     pre_node_detected_in_code: false
     prompt_boundary_defined: null
     status: detected
@@ -485,18 +433,6 @@ thresholds:
 # ───────────────────────────────────────────────────────────────
 
 human_authorisation_gates:
-- HG-GAP-002:
-    ai_integration_ref: AI-001
-    audit_trail_required: true
-    authorisation_level: null
-    location: ecc_dashboard.py:806
-    on_timeout: null
-    output_flows_to: AI output flows to 'database write' with no human review detected.
-    status: MISSING
-    timeout_seconds: null
-    trigger_condition: null
-    what_human_must_approve: null
-    what_human_must_review: null
 - HG-TEMPLATE:
     _comment: Add human authorisation gates here. Copy this block.
     audit_trail_required: true
@@ -522,28 +458,14 @@ terminal_states:
     escalation_path: null
     governance_authority: null
     human_authorised_exit_required: true
-    location: ecc_dashboard.py:806
-    notification_targets: null
-    re_enablement_creates_new_instance: true
-    reason: No checkpoint exists before the AI call at ecc_dashboard.py:806. The AI
-      receives input and produces output with nothing checking whether it should —
-      or what it can return.
-    response_time_sla: null
-    triggered_by_gap: PN-GAP-001
-- TS-002:
-    automated_transitions: NONE — by definition
-    entry_conditions: null
-    escalation_path: null
-    governance_authority: null
-    human_authorised_exit_required: true
     location: ecc2\src\main.rs:9125
     notification_targets: null
     re_enablement_creates_new_instance: true
     reason: An irreversible action (email_send) at line 9125 in an AI-adjacent file
       has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-003
-- TS-003:
+    triggered_by_gap: IA-GAP-001
+- TS-002:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -555,8 +477,8 @@ terminal_states:
     reason: An irreversible action (database_write) at line 1983 in an AI-adjacent
       file has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-004
-- TS-004:
+    triggered_by_gap: IA-GAP-002
+- TS-003:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -568,8 +490,8 @@ terminal_states:
     reason: An irreversible action (database_write) at line 4453 in an AI-adjacent
       file has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-005
-- TS-005:
+    triggered_by_gap: IA-GAP-003
+- TS-004:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -581,8 +503,8 @@ terminal_states:
     reason: An irreversible action (email_send) at line 4822 in an AI-adjacent file
       has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-006
-- TS-006:
+    triggered_by_gap: IA-GAP-004
+- TS-005:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -594,8 +516,8 @@ terminal_states:
     reason: An irreversible action (database_delete) at line 253 in an AI-adjacent
       file has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-007
-- TS-007:
+    triggered_by_gap: IA-GAP-005
+- TS-006:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -607,8 +529,8 @@ terminal_states:
     reason: An irreversible action (database_write) at line 235 in an AI-adjacent
       file has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-008
-- TS-008:
+    triggered_by_gap: IA-GAP-006
+- TS-007:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -620,8 +542,8 @@ terminal_states:
     reason: An irreversible action (database_write) at line 819 in an AI-adjacent
       file has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-009
-- TS-009:
+    triggered_by_gap: IA-GAP-007
+- TS-008:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -633,8 +555,8 @@ terminal_states:
     reason: An irreversible action (database_write) at line 1992 in an AI-adjacent
       file has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-010
-- TS-010:
+    triggered_by_gap: IA-GAP-008
+- TS-009:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -646,8 +568,8 @@ terminal_states:
     reason: An irreversible action (database_write) at line 103 in an AI-adjacent
       file has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-011
-- TS-011:
+    triggered_by_gap: IA-GAP-009
+- TS-010:
     automated_transitions: NONE — by definition
     entry_conditions: null
     escalation_path: null
@@ -659,7 +581,7 @@ terminal_states:
     reason: An irreversible action (database_write) at line 3 in an AI-adjacent file
       has no authorisation gate. Once executed, it cannot be undone.
     response_time_sla: null
-    triggered_by_gap: IA-GAP-012
+    triggered_by_gap: IA-GAP-010
 - TS-TEMPLATE:
     _comment: Add terminal states here. Copy this block.
     automated_transitions: NONE
@@ -681,13 +603,13 @@ drift_class_candidates:
 - DC-FINDING-002:
     code: DC-E13
     confirmed: null
-    evidence_detected: 10 chained AI calls — output of one may seed the next without
+    evidence_detected: 8 chained AI calls — output of one may seed the next without
       validation
     invariant_ref: null
     legion_detected:
       code: E13-L1
       name: ''
-    location: 10 AI calls detected
+    location: 8 AI calls detected
     monitoring_frequency: Per-turn monitoring recommended
     name: ''
     plain_english: ''
@@ -720,227 +642,15 @@ drift_class_candidates:
     terminal_state_ref: null
     tier: ''
     what_happens_without_governance: ''
-- DC-FINDING-004:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (email_send) with no authorisation gate
-      — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: ecc2\src\main.rs:9125
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-005:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (database_write) with no authorisation
-      gate — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: ecc2\src\main.rs:1983
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-006:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (database_write) with no authorisation
-      gate — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: ecc2\src\main.rs:4453
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-007:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (email_send) with no authorisation gate
-      — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: ecc2\src\session\manager.rs:4822
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-008:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (database_delete) with no authorisation
-      gate — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: ecc2\src\session\manager.rs:253
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-009:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (database_write) with no authorisation
-      gate — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: ecc2\src\session\manager.rs:235
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-010:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (database_write) with no authorisation
-      gate — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: ecc2\src\session\manager.rs:819
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-011:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (database_write) with no authorisation
-      gate — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: ecc2\src\session\manager.rs:1992
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-012:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (database_write) with no authorisation
-      gate — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: scripts\hooks\gateguard-fact-force.js:103
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
-- DC-FINDING-013:
-    code: DC-E14
-    confirmed: null
-    evidence_detected: Irreversible action (database_write) with no authorisation
-      gate — Knight Capital failure mode
-    invariant_ref: null
-    legion_detected:
-      code: E14-L1
-      name: ''
-    location: scripts\hooks\pre-bash-commit-quality.js:3
-    monitoring_frequency: Per-turn monitoring recommended
-    name: ''
-    plain_english: ''
-    severity: critical
-    stabiliser_recommendation:
-      contraindications: None
-      name: ''
-      operator: ''
-    terminal_state_ref: null
-    tier: ''
-    what_happens_without_governance: ''
 - DC-I11-AGGREGATE:
     code: DC-I11
     confirmed: null
     governance_layer_location: null
     name: Evaluative Decoupling
-    note: DC-I11 is a systemic property — one aggregate replaces 10 per-call-site
-      findings.
+    note: DC-I11 is a systemic property — one aggregate replaces 8 per-call-site findings.
     recommendation: Implement a governance checkpoint layer at your API entry points
       rather than per-call-site.
     representative_locations:
-    - ecc_dashboard.py:806
     - src\llm\providers\astraflow.py:59
     - src\llm\providers\astraflow.py:82
     - src\llm\providers\atlas.py:72
@@ -949,9 +659,8 @@ drift_class_candidates:
     - src\llm\providers\claude.py:65
     - src\llm\providers\openai.py:25
     - src\llm\providers\openai.py:77
-    - src\llm\tools\executor.py:89
     severity: informational
-    total_instances: 10
+    total_instances: 8
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 9b — DRIFT CLASS DETECTION (LEGION ANALYSIS)
@@ -1270,11 +979,11 @@ legion_matches:
       contraindications: None
       dc_code: DC-E13
       dc_name: ''
-      evidence: '10 chained AI calls: ecc_dashboard.py:806, src\llm\providers\astraflow.py:59,
-        src\llm\providers\astraflow.py:82, src\llm\providers\atlas.py:72, src\llm\provider'
+      evidence: '8 chained AI calls: src\llm\providers\astraflow.py:59, src\llm\providers\astraflow.py:82,
+        src\llm\providers\atlas.py:72, src\llm\providers\atlas.py:99, src\llm\'
       legion_code: L3
       legion_name: ''
-      location: ecc_dashboard.py:806
+      location: src\llm\providers\astraflow.py:59
       plain_english: ''
       stabilising_operator: None
       vsl_template: None
@@ -1491,7 +1200,7 @@ qa_test_recommendations:
       code: L3
       description: ''
       name: ''
-    location: ecc_dashboard.py:806
+    location: src\llm\providers\astraflow.py:59
     tests:
     - approach: Mock the receiving agent; inject corrupted/malformed output from the
         sending agent. Assert the handover is rejected or quarantined.
@@ -1516,25 +1225,24 @@ qa_test_recommendations:
 
 governance_intelligence:
   coverage_by_consequence_type:
-    database: 8.823529411764707
+    database: 2.941176470588235
     external_api: 12.5
-    file_system: 47.76119402985074
-    state_mutation: 47.22222222222222
+    file_system: 16.417910447761194
+    state_mutation: 19.444444444444446
   coverage_by_decision_type:
-    agent_invocation: 0.0
-    conditional_branch: 22.800965850293203
-    function_call: 53.47826086956522
-    loop: 24.354561101549052
-    ternary: 21.18343195266272
-    try_except: 23.713646532438478
+    conditional_branch: 15.72052401746725
+    function_call: 16.666666666666664
+    loop: 22.093023255813954
+    ternary: 37.5
+    try_except: 12.5
   critical_decision_coverage_percent: 0.0
   gamma_agent_handover: 0.0
   gamma_critical: 0.0
-  overall_governance_coverage_percent: 23.72981256630909
+  overall_governance_coverage_percent: 17.69722814498934
   pre_node_proximity: CRITICAL (>50% of critical decisions ungoverned)
-  structural_gamma_overall: 0.23723617497936564
+  structural_gamma_overall: 0.18
   t_amplification_active: false
-  tendency_score: 8.388810562301073
+  tendency_score: 1.2606742897559826
   tendency_state: failure
 
 # ───────────────────────────────────────────────────────────────
@@ -1619,7 +1327,7 @@ critical_decisions:
   - skills\skill-comply\scripts\report.py:128
   - skills\skill-comply\scripts\report.py:133
   - skills\skill-comply\scripts\report.py:136
-  critical_ungoverned: 73
+  critical_ungoverned: 96
   most_influential:
   - criticality: 0.5
     governed: false
@@ -1641,7 +1349,7 @@ critical_decisions:
     governed: false
     location: skills\skill-comply\scripts\report.py:115
     pagerank: 0.00018213465258462314
-  total_critical: 73
+  total_critical: 96
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 13 — GOVERNANCE SCORE
@@ -1651,15 +1359,15 @@ critical_decisions:
 # ───────────────────────────────────────────────────────────────
 
 structural_gamma:
-  governed_decision_points: 2012
-  interpretation: Only 24% of decision points are governed. The system is structurally
+  governed_decision_points: 82
+  interpretation: Only 18% of decision points are governed. The system is structurally
     ungoverned. The Drift Node is the global energy minimum.
   note: Structural proxy only — not runtime Gamma. Measures whether governance mechanisms
     are structurally present.
   status: BELOW_THRESHOLD
   threshold: 0.9
-  total_decision_points: 8481
-  value: 0.23723617497936564
+  total_decision_points: 468
+  value: 0.18
 
 # ───────────────────────────────────────────────────────────────
 # SECTION 14 — NEXT STEPS
@@ -1668,7 +1376,7 @@ structural_gamma:
 next_steps:
 - step_1:
     action: Fill in every null field in this file
-    critical_count: 11
+    critical_count: 10
     start_with: Section 4 (Pre-Nodes) and Section 8 (Terminal States)
 - step_2:
     action: Complete the test stubs in test_case_matrix.yaml
