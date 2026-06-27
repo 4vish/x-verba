@@ -1487,9 +1487,18 @@ _DEPTH_PARAM_RE = re.compile(r'\b(max_spawn_depth|spawn_depth|max_depth|child_de
 # SendMessageTool in separate files). Detected as a repo-wide pass, not a
 # per-file detector, since neither half alone is the signature.
 _PUBLISH_METHOD_NAMES = {"publish_message"}
-_SUBSCRIBE_METHOD_NAMES = {"_watch", "set_addresses"}
+_SUBSCRIBE_METHOD_NAMES = {"_watch", "set_addresses", "add_subscription"}
 _JS_TEAM_TOOL_NAME_RE = re.compile(r"""name\s*:\s*['"]TeamCreate['"]""")
 _JS_SEND_MESSAGE_TOOL_NAME_RE = re.compile(r"""name\s*:\s*['"]SendMessage['"]""")
+
+# Family 1 variant (Semantic Kernel's Process Framework): a fluent
+# edge-builder chain spelled with "event" terminology —
+# ``step.on_event("X").send_event_to(target=other_step)`` — but this is a
+# *declared* edge between two specific steps, not a decoupled broadcast to
+# an unknown set of subscribers, so it's family 1 (graph/builder), not
+# family 8 (pub/sub) despite the "event" naming. Confirmed real shape uses
+# target= as a keyword, not a positional arg.
+_SK_EVENT_TRIGGER_METHODS = {"on_event", "on_input_event", "on_function_result"}
 
 # Constructor keyword arguments whose value is a list of agents — the
 # list-composition family (CrewAI's agents=, AutoGen's participants=,
@@ -1545,6 +1554,7 @@ class AgentHandoverAnalyser:
         handovers.extend(self._detect_named_registry(tree, lines, filepath))
         handovers.extend(self._detect_recursive_delegation(tree, source, lines, filepath))
         handovers.extend(self._detect_remote_agent_calls(tree, lines, filepath))
+        handovers.extend(self._detect_sk_event_edges(tree, lines, filepath))
         return handovers
 
     # ── Family 1: graph/builder edges ─────────────────────────────────────
@@ -1855,13 +1865,17 @@ class AgentHandoverAnalyser:
     def _detect_remote_agent_calls(self, tree: ast.AST, lines: list, filepath: str) -> list:
         """A client object calling a remotely, independently-deployed
         agent/workflow over a network boundary — distinct from every other
-        family, no in-process call chain. Two confirmed shapes:
+        family, no in-process call chain. Three confirmed shapes:
 
         - AP2's ``PaymentRemoteA2aClient(name="merchant_agent",
           base_url="http://...", ...)`` — any ``*Client(...)`` constructor
           carrying both a ``name=`` and a ``base_url=`` keyword.
         - llama_deploy's ``WorkflowClient.run_workflow(workflow_name,
           ...)`` — a ``.run_workflow(`` call, naming its target by string.
+        - CrewAI's ``execute_a2a_delegation(endpoint=..., agent_id=...,
+          from_agent=..., ...)`` / ``aexecute_a2a_delegation(...)`` — a
+          bare function call (not a method on a client object), naming
+          its target via ``agent_id=`` rather than ``name=``.
         """
         assigned_names = self._collect_assigned_names(tree)
         handovers = []
@@ -1888,6 +1902,63 @@ class AgentHandoverAnalyser:
                     handovers.append(self._build_handover(
                         {"agent": from_agent, "line": line_num}, to_agent, "", line_num, lines, filepath,
                     ))
+
+            if isinstance(node.func, ast.Name) and node.func.id in (
+                "execute_a2a_delegation", "aexecute_a2a_delegation",
+            ):
+                kw_values = {kw.arg: kw.value for kw in node.keywords}
+                to_agent = None
+                for key in ("agent_id", "agent_role", "endpoint"):
+                    if key in kw_values:
+                        to_agent = self._literal_or_name(kw_values[key])
+                        if to_agent:
+                            break
+                if to_agent:
+                    from_agent = (
+                        self._literal_or_name(kw_values["from_agent"])
+                        if "from_agent" in kw_values else None
+                    ) or "Orchestrator"
+                    line_num = getattr(node, "lineno", 0)
+                    handovers.append(self._build_handover(
+                        {"agent": from_agent, "line": line_num}, to_agent, "", line_num, lines, filepath,
+                    ))
+        return handovers
+
+    def _detect_sk_event_edges(self, tree: ast.AST, lines: list, filepath: str) -> list:
+        """Semantic Kernel's Process Framework — ``step.on_event("X")
+        .send_event_to(target=other_step, ...)``. A fluent edge-builder
+        chain spelled with event terminology, but the edge is a *declared*
+        link between two specific steps (family 1), not a decoupled
+        broadcast to an unknown set of subscribers (family 8)."""
+        handovers = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            if node.func.attr != "send_event_to":
+                continue
+            target_node = None
+            for kw in node.keywords:
+                if kw.arg == "target":
+                    target_node = kw.value
+                    break
+            if target_node is None and node.args:
+                target_node = node.args[0]
+            if target_node is None:
+                continue
+
+            trigger_call = node.func.value
+            if not (isinstance(trigger_call, ast.Call) and isinstance(trigger_call.func, ast.Attribute)):
+                continue
+            if trigger_call.func.attr not in _SK_EVENT_TRIGGER_METHODS:
+                continue
+
+            from_step = self._literal_or_name(trigger_call.func.value)
+            to_step = self._literal_or_name(target_node)
+            if from_step and to_step:
+                line_num = getattr(node, "lineno", 0)
+                handovers.append(self._build_handover(
+                    {"agent": from_step, "line": line_num}, to_step, "", line_num, lines, filepath,
+                ))
         return handovers
 
     def _scan_body(self, body: list, lines: list, filepath: str) -> list:

@@ -25,9 +25,9 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from engine import ScanEngine, OutputFormatter, TendencyState
-from writer import OutputWriter
-from cli import main
+from x_verba.engine import ScanEngine, OutputFormatter, TendencyState
+from x_verba.writer import OutputWriter
+from x_verba.cli import main
 
 
 TEST_REPO_PATH = Path(__file__).parent.parent / "_test_sample"
@@ -363,13 +363,13 @@ class TestDomainModelExtraction:
     for 'no new behaviour')."""
 
     def test_pre_node_to_dict(self):
-        from models import PreNode
+        from x_verba.models import PreNode
         pn = PreNode(type="human_approval", strength=0.75, evidence_line="if approved:")
         d = pn.to_dict()
         assert d == {"type": "human_approval", "strength": 0.75, "evidence_line": "if approved:"}
 
     def test_terminal_state_to_dict(self):
-        from models import TerminalState
+        from x_verba.models import TerminalState
         ts = TerminalState(
             id="ts-001", type="silent_failure", location="main.py:42",
             severity="critical", plain_english="Exception swallowed silently.",
@@ -383,7 +383,7 @@ class TestDomainModelExtraction:
         assert "extra" not in d
 
     def test_invariant_to_dict(self):
-        from models import Invariant
+        from x_verba.models import Invariant
         inv = Invariant(
             location="auth.py:10", type="authorization",
             pattern="role_check", line_content="if not user.is_admin:", near_ai_call=True,
@@ -394,7 +394,7 @@ class TestDomainModelExtraction:
         assert "extra" not in d
 
     def test_governance_gap_to_dict_merges_extra(self):
-        from models import GovernanceGap
+        from x_verba.models import GovernanceGap
         gap = GovernanceGap(
             id="gap-001", type="missing_pre_node", location="main.py:10",
             severity="critical", plain_english="No Pre-Node before AI call.",
@@ -412,7 +412,7 @@ class TestDomainModelExtraction:
         assert d["type"] == "missing_pre_node"
 
     def test_governance_gap_no_extra(self):
-        from models import GovernanceGap
+        from x_verba.models import GovernanceGap
         gap = GovernanceGap(
             id="gap-002", type="informal_invariant", location="api.py:5",
             severity="medium", plain_english="Informal check.",
@@ -455,7 +455,7 @@ class TestBaseline:
     """BaselineStore save/load/archive round-trips, using the real scan results."""
 
     def test_save_and_load_round_trip(self, results, tmp_path):
-        from baseline import BaselineStore
+        from x_verba.baseline import BaselineStore
         store = BaselineStore(tmp_path)
         saved = store.save(results)
         assert saved.exists()
@@ -468,20 +468,20 @@ class TestBaseline:
         assert b_gamma["status"] == r_gamma["status"]
 
     def test_load_explicit_path(self, results, tmp_path):
-        from baseline import BaselineStore
+        from x_verba.baseline import BaselineStore
         store = BaselineStore(tmp_path)
         saved_path = store.save(results)
         loaded = store.load(saved_path)
         assert "summary" in loaded
 
     def test_load_raises_when_no_baseline(self, tmp_path):
-        from baseline import BaselineStore, BaselineNotFoundError
+        from x_verba.baseline import BaselineStore, BaselineNotFoundError
         store = BaselineStore(tmp_path / "nonexistent")
         with pytest.raises(BaselineNotFoundError, match="No governance baseline"):
             store.load()
 
     def test_archive_sequential_numbering(self, results, tmp_path):
-        from baseline import BaselineStore
+        from x_verba.baseline import BaselineStore
         store = BaselineStore(tmp_path)
         a1 = store.archive(results)
         a2 = store.archive(results)
@@ -493,7 +493,7 @@ class TestBaseline:
             assert p.exists()
 
     def test_save_produces_valid_json(self, results, tmp_path):
-        from baseline import BaselineStore
+        from x_verba.baseline import BaselineStore
         store = BaselineStore(tmp_path)
         store.save(results)
         text = store.baseline_path.read_text(encoding="utf-8")
@@ -509,8 +509,8 @@ class TestVerification:
     plus overall_status/has_critical_regressions/passed semantics."""
 
     def test_stable_same_vs_same(self, results):
-        from engine import OutputFormatter
-        from qa_engine import GovernanceVerificationEngine
+        from x_verba.engine import OutputFormatter
+        from x_verba.qa_engine import GovernanceVerificationEngine
         safe = OutputFormatter._json_safe(results)
         vr = GovernanceVerificationEngine().compare(safe, safe)
         assert vr.overall_status == "STABLE"
@@ -519,8 +519,8 @@ class TestVerification:
 
     def test_regressed_critical_findings_increase(self, results):
         import copy
-        from engine import OutputFormatter
-        from qa_engine import GovernanceVerificationEngine
+        from x_verba.engine import OutputFormatter
+        from x_verba.qa_engine import GovernanceVerificationEngine
         baseline = OutputFormatter._json_safe(results)
         current = copy.deepcopy(baseline)
         current["summary"]["critical"] = baseline["summary"]["critical"] + 1
@@ -531,8 +531,8 @@ class TestVerification:
 
     def test_improved_critical_findings_decrease(self, results):
         import copy
-        from engine import OutputFormatter
-        from qa_engine import GovernanceVerificationEngine
+        from x_verba.engine import OutputFormatter
+        from x_verba.qa_engine import GovernanceVerificationEngine
         baseline = OutputFormatter._json_safe(results)
         current = copy.deepcopy(baseline)
         # increase baseline critical so current looks lower
@@ -543,8 +543,8 @@ class TestVerification:
 
     def test_gamma_status_downgrade_is_critical(self, results):
         import copy
-        from engine import OutputFormatter
-        from qa_engine import GovernanceVerificationEngine
+        from x_verba.engine import OutputFormatter
+        from x_verba.qa_engine import GovernanceVerificationEngine
         baseline = OutputFormatter._json_safe(results)
         current = copy.deepcopy(baseline)
         # force baseline to ABOVE_THRESHOLD so current looks like a downgrade
@@ -556,28 +556,28 @@ class TestVerification:
         vr = GovernanceVerificationEngine().compare(baseline, current)
         # status downgrade is CRITICAL severity REGRESSED direction
         gamma_delta = next(d for d in vr.deltas if d.metric == "structural_gamma")
-        from models import Severity, DeltaDirection
+        from x_verba.models import Severity, DeltaDirection
         assert gamma_delta.severity == Severity.CRITICAL
         assert gamma_delta.direction == DeltaDirection.REGRESSED
         assert vr.has_critical_regressions is True
 
     def test_new_ai_provider_is_medium_new(self, results):
         import copy
-        from engine import OutputFormatter
-        from qa_engine import GovernanceVerificationEngine
+        from x_verba.engine import OutputFormatter
+        from x_verba.qa_engine import GovernanceVerificationEngine
         baseline = OutputFormatter._json_safe(results)
         current = copy.deepcopy(baseline)
         current["summary"]["ai_inventory"]["by_provider"]["novel_provider"] = 2
         vr = GovernanceVerificationEngine().compare(baseline, current)
-        from models import Severity, DeltaDirection
+        from x_verba.models import Severity, DeltaDirection
         new_deltas = [d for d in vr.deltas if d.direction == DeltaDirection.NEW
                       and "novel_provider" in d.metric]
         assert len(new_deltas) == 1
         assert new_deltas[0].severity == Severity.MEDIUM
 
     def test_verification_result_to_dict_shape(self, results):
-        from engine import OutputFormatter
-        from qa_engine import GovernanceVerificationEngine
+        from x_verba.engine import OutputFormatter
+        from x_verba.qa_engine import GovernanceVerificationEngine
         safe = OutputFormatter._json_safe(results)
         vr = GovernanceVerificationEngine().compare(safe, safe)
         d = vr.to_dict()
@@ -646,7 +646,7 @@ class TestDriftClassification:
 
     def test_dc_qa_recommendations_from_legion_matches(self):
         """_dc_qa_recommendations returns correct test cases for known DC codes."""
-        from qa_engine import _dc_qa_recommendations
+        from x_verba.qa_engine import _dc_qa_recommendations
         matches = [
             {
                 "dc_code": "DC-E13",
@@ -676,7 +676,7 @@ class TestDriftClassification:
 
     def test_dc_qa_recommendations_speculative_no_tests(self):
         """SPECULATIVE matches produce a note but no specific test cases."""
-        from qa_engine import _dc_qa_recommendations
+        from x_verba.qa_engine import _dc_qa_recommendations
         matches = [
             {
                 "dc_code": "DC-X99",
@@ -698,35 +698,35 @@ class TestGovernanceNodes:
     """Writer Section 3 — Candidate Governance Node inference and YAML output."""
 
     def test_infer_embed_keyword_is_high(self):
-        from writer import _infer_candidate_node
+        from x_verba.writer import _infer_candidate_node
         ai = {"line_content": "service.generate_raw_embeddings(texts)", "provider": "openai", "output_destination": None}
         name, conf = _infer_candidate_node(ai)
         assert name == "EMBEDDINGS_GENERATED"
         assert conf == "HIGH"
 
     def test_infer_classify_keyword_is_high(self):
-        from writer import _infer_candidate_node
+        from x_verba.writer import _infer_candidate_node
         ai = {"line_content": "model.classify(input_text)", "provider": "anthropic", "output_destination": None}
         name, conf = _infer_candidate_node(ai)
         assert name == "CONTENT_CLASSIFIED"
         assert conf == "HIGH"
 
     def test_infer_known_provider_no_keyword_is_medium(self):
-        from writer import _infer_candidate_node
+        from x_verba.writer import _infer_candidate_node
         ai = {"line_content": "client.chat.completions.create(messages=messages)", "provider": "openai", "output_destination": None}
         name, conf = _infer_candidate_node(ai)
         assert name == "AI_RESPONSE_GENERATED"
         assert conf == "MEDIUM"
 
     def test_infer_user_destination_is_medium(self):
-        from writer import _infer_candidate_node
+        from x_verba.writer import _infer_candidate_node
         ai = {"line_content": "model.run(prompt)", "provider": "unknown_provider", "output_destination": "user_response"}
         name, conf = _infer_candidate_node(ai)
         assert name == "AI_RESPONSE_GENERATED"
         assert conf == "MEDIUM"
 
     def test_infer_no_signal_is_low(self):
-        from writer import _infer_candidate_node
+        from x_verba.writer import _infer_candidate_node
         ai = {"line_content": "custom_model.process(data)", "provider": "custom", "output_destination": None}
         name, conf = _infer_candidate_node(ai)
         assert name == "AI_OPERATION_EXECUTED"
@@ -782,7 +782,7 @@ class TestLegionSchema:
     def test_legion_schema_serializable(self):
         """Legion.to_dict() preserves all legacy keys and adds new schema fields."""
         import json
-        from models import Legion
+        from x_verba.models import Legion
 
         legion = Legion(
             id="abc1234567890abc",
@@ -831,7 +831,7 @@ class TestLegionSchema:
 
     def test_evidence_extraction_deterministic(self):
         """_extract_evidence_nodes returns identical canonical_hashes for identical input."""
-        from engine import _extract_evidence_nodes
+        from x_verba.engine import _extract_evidence_nodes
 
         primitives = {
             "decision_points": [
@@ -866,7 +866,7 @@ class TestLegionSchema:
 
     def test_legion_canonical_hash_deterministic(self):
         """_compute_canonical_hash: identical inputs → identical output, always."""
-        from engine import _compute_canonical_hash
+        from x_verba.engine import _compute_canonical_hash
 
         h1 = _compute_canonical_hash("agents/foo.py", 42, "DC-E13", "L1", "agent_handover_no_prenode")
         h2 = _compute_canonical_hash("agents/foo.py", 42, "DC-E13", "L1", "agent_handover_no_prenode")
@@ -887,8 +887,8 @@ class TestLegionSchema:
 
     def test_dedup_keeps_highest_confidence(self):
         """_dedup_legions retains the highest-confidence Legion per canonical_hash."""
-        from engine import _dedup_legions
-        from models import Legion
+        from x_verba.engine import _dedup_legions
+        from x_verba.models import Legion
 
         shared_hash = "dedup_test_1234abcd"
 

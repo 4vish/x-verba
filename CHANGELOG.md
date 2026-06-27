@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+Family 8 (pub/sub messaging) extended with a 3rd, fully independent
+confirmation, and a new family-1 (graph/builder) variant added —
+following up on third-party feedback on the framework taxonomy that
+prompted re-checking AutoGen, Semantic Kernel, and MCP.
+
+### Added
+
+- **AutoGen's own core runtime pub/sub pair** — `publish_message()` (the
+  exact same method name as MetaGPT's) paired with
+  `add_subscription(Subscription)`, confirmed in `autogen-core`'s own
+  source (`_agent_runtime.py`, `_subscription.py`,
+  `_single_threaded_agent_runtime.py`). Re-scan after fix: 0 → 2 agents /
+  1 handover on AutoGen's own core runtime.
+- **Semantic Kernel's Process Framework edge-builder** —
+  `step.on_event("EventName").send_event_to(target=other_step, ...)`
+  (also `on_input_event`/`on_function_result` as trigger methods). Looked
+  like a family-8 (pub/sub) candidate going in — "event" terminology
+  suggested a broadcast — but the actual shape is a *declared* edge
+  between two specific steps, not a decoupled broadcast to an unknown set
+  of subscribers, so it's family 1, not family 8. `target=` is a keyword
+  argument, not positional — confirmed against real source
+  (`samples/concepts/processes/plan_and_execute.py`) before implementing.
+  Re-scan after fix: 0 → 16 agents / 17 handovers across SK's own process
+  samples.
+
+### Considered, not added
+
+- **MCP (Model Context Protocol)** — has a genuine network-handshake
+  shape (`ClientSession.call_tool(name, ...)`), but it's an
+  **agent-to-tool** protocol, not **agent-to-agent** — its purpose is
+  connecting an LLM app to external tools/resources, not handing off to
+  another agent. Adding it to family 4 would blur the family's actual
+  defining trait. Not implemented.
+
+No regressions across a 6-repo sweep.
+
+---
+
+Family 4 (protocol/server) extended with a 3rd confirmed shape — CrewAI's
+own A2A protocol implementation: `execute_a2a_delegation(endpoint=...,
+agent_id=..., from_agent=..., ...)` / `aexecute_a2a_delegation(...)`, a
+bare function call (not a method on a `*Client` object), naming its
+target via `agent_id=` rather than `name=`. Confirmed against CrewAI's
+real `a2a/utils/delegation.py`. Re-scan of CrewAI's own source
+(`lib/crewai/src/crewai`): 0 → 5 agents / 4 handovers (family 2's
+`agents:` field plus this new shape). No regressions.
+
+---
+
 Raw-HTTP AI-provider call detection. Confirmed 3 times this session (JS
 `fetch()`, Python `httpx`, a 20-file hit via a custom `fetchWithCache()`
 wrapper in promptfoo) that an AI API call with no SDK import and no

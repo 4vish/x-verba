@@ -1,18 +1,18 @@
-"""X-VERBA v0.4.0 — Governance Intelligence Platform"""
+"""X-VERBA v0.4.7 — Governance Intelligence Platform"""
 
-__version__ = "0.4.0"
+__version__ = "0.4.7"
 
-from engine import (
+from x_verba.engine import (
     ScanEngine,
     OutputFormatter,
     TendencyState,
 )
 
-from writer import (
+from x_verba.writer import (
     OutputWriter,
 )
 
-from cli import (
+from x_verba.cli import (
     main,
 )
 
