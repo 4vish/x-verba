@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
+
+Multi-agent handover detection — the full body of work. `agent_inventory`
+(Agents Detected / Handovers / Chains / Clusters) went from reporting 0 on
+every real multi-agent repo tested, to correctly detecting all 8 confirmed
+handover families across 30+ real frameworks. Bundled with this release:
+the systemic AI-provider-import-gap fix (9-for-9), 4 file-walker bugs, and
+raw-HTTP AI-provider-call detection. See the entries below for the full,
+chronological breakdown of everything that shipped on the way here.
 
 Family 3 (recursive self-delegation) gets its first JS/TS implementation —
 found while resolving the correct GitHub URL for OpenClaw, which let us

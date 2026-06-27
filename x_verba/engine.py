@@ -3560,7 +3560,7 @@ class ScanEngine:
             "scan_date": datetime.now(timezone.utc).isoformat(),
             "repo": str(path),
             "identity_key": identity_key,
-            "verba_version": "0.4.7",
+            "verba_version": "0.5.0",
             "context_profile": self.context_profile,
             "reviewed": False,
             "focus_paths": focus_paths or [],
