@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+Family 3 (recursive self-delegation) gets its first JS/TS implementation —
+found while resolving the correct GitHub URL for OpenClaw, which let us
+verify its own source directly for the first time (previously, OpenClaw's
+placement in this family rested on Hermes's docstring *citing* OpenClaw as
+inspiration, not on scanning OpenClaw's own code).
+
+### Added
+
+- **`AgentHandoverAnalyser.analyse_js()` now detects family 3.** A call to
+  `spawnSubagentDirect(...)` (or a reasonable variant name), corroborated
+  by a depth-tracking identifier (`spawnDepth`/`childDepth`/`maxDepth`)
+  present somewhere in the file — the JS/TS equivalent of the existing
+  Python detector, same two-signal requirement. Confirmed against
+  OpenClaw's own `src/agents/subagent-spawn.ts`/`subagent-depth.ts`. Most
+  real matches are the function calling itself (`spawnSubagentDirect ->
+  <delegated subagent>`), which is the literal, correct representation of
+  recursive self-delegation. Re-scan after fix, OpenClaw's own
+  `src/agents`: 0 → 2 agents / 1 handover.
+
+No regressions across a 3-repo JS/TS sweep.
+
+---
+
 Family 8 (pub/sub messaging) extended with a 3rd, fully independent
 confirmation, and a new family-1 (graph/builder) variant added —
 following up on third-party feedback on the framework taxonomy that

@@ -1479,6 +1479,19 @@ _JS_RECORD_KEY_RE = re.compile(r'^\s{2,4}["\']?(\w+)["\']?\s*:\s*\{', re.MULTILI
 _DELEGATION_TOOL_NAMES = {"delegate_task", "delegate_agent", "spawn_agent", "spawn_subagent"}
 _DEPTH_PARAM_RE = re.compile(r'\b(max_spawn_depth|spawn_depth|max_depth|child_depth)\b')
 
+# JS/TS equivalent (OpenClaw's own source: src/agents/subagent-spawn.ts /
+# subagent-depth.ts — spawnSubagentDirect(...) with spawnDepth/childDepth
+# tracking). Same two-signal requirement: depth-param presence corroborates
+# the spawn-call name, since the call name alone is too easily an unrelated
+# function of the same name.
+_JS_DELEGATION_CALL_RE = re.compile(
+    r'\b(?:spawnSubagentDirect|spawnSubagent|delegateTask|delegateAgent|spawnAgent)\s*\('
+)
+_JS_DEPTH_PARAM_RE = re.compile(r'\b(spawnDepth|childDepth|maxDepth|maxSpawnDepth)\b')
+_JS_ENCLOSING_FUNCTION_RE = re.compile(
+    r'(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\('
+)
+
 # Family 8 (team registry + publish/subscribe messaging): the handover
 # signature is a publish + subscribe PAIR of definitions, not a call site —
 # and confirmed real examples split that pair across multiple files
@@ -2059,6 +2072,10 @@ class AgentHandoverAnalyser:
         - Family 7 (open-agent-sdk-typescript): a dict keyed by name,
           ``const BUILTIN_AGENTS: Record<string, AgentDefinition> = {
           Explore: {...}, Plan: {...} }``.
+        - Family 3 (OpenClaw): a call to ``spawnSubagentDirect(...)`` (or a
+          reasonable variant name), corroborated by a depth-tracking
+          identifier (``spawnDepth``/``childDepth``/...) present somewhere
+          in the file — same two-signal requirement as the Python version.
         """
         handovers = []
         tool_to_agent = {}
@@ -2091,6 +2108,20 @@ class AgentHandoverAnalyser:
             for key_m in _JS_RECORD_KEY_RE.finditer(span):
                 handovers.append(self._build_handover(
                     {"agent": registry_var, "line": line_num}, key_m.group(1), "", line_num, lines, filepath,
+                ))
+
+        if _JS_DEPTH_PARAM_RE.search(content):
+            enclosing_fns = list(_JS_ENCLOSING_FUNCTION_RE.finditer(content))
+            for m in _JS_DELEGATION_CALL_RE.finditer(content):
+                line_num = content[:m.start()].count("\n") + 1
+                from_agent = "Orchestrator"
+                for fn_m in enclosing_fns:
+                    if fn_m.start() < m.start():
+                        from_agent = fn_m.group(1)
+                    else:
+                        break
+                handovers.append(self._build_handover(
+                    {"agent": from_agent, "line": line_num}, "<delegated subagent>", "", line_num, lines, filepath,
                 ))
 
         return handovers
