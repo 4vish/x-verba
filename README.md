@@ -6,7 +6,7 @@
   <img src="assets/super-semantics-logo.png" alt="Super Semantics" width="100"/>
 </p>
 
-# X-Verba — Governance Scanning for Code
+# X-Verba — Structural and Behavioral Governance Scanning for AI Agents
 
 **Find the places where your code makes consequential decisions with no safeguards. Before they become failures.**
 
